@@ -12,7 +12,7 @@ export class DestructionScene extends Phaser.Scene {
     this.TEMP_MAX = 1200;
     this.CO_THRESHOLD = 100;
     this.DRE_TARGET = 99.99;
-    this.MIN_DWELL_SEC = 60;
+    this.MIN_DWELL_SEC = 20;
 
     this.queue = [...this.gs.transportedContainers];
     this.chamber = null;
