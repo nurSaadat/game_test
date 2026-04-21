@@ -34,9 +34,9 @@ The game has four stages, each with different mechanics. Your goal is to collect
 
 ### Stage 1 — Field Collection (Point and Click)
 
-Click equipment containers to collect their refrigerant. Fill out the collection log form for each container (facility address, date, container ID, quantity, etc.). Collect all 3 eligible containers to advance.
+Visit 3 locations (residential property, suburban home, restaurant) and click equipment to collect refrigerant. Fill out the collection log form for each container (facility address, date, container ID, quantity, etc.). Collect all 8 eligible containers across all locations to advance.
 
-- Avoid **CO2-R744** containers — they are ineligible and cost you points.
+- Avoid ineligible refrigerants (**CO2-R744**, **R-290**, **Ammonia**) — they cost you points.
 - Missing form fields trigger a **Provenance Gap** penalty that follows you through later stages.
 
 ### Stage 2 — Aggregation & Sorting (Drag and Drop)

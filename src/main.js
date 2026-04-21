@@ -34,6 +34,11 @@ if (startStage !== "COLLECTION") {
     { fieldContainerId: "FC-001", origin: { id: "CP-001" }, massKg: 2.3, refrigerant: "HCFC-22", collectionLog: {}, provenanceOk: true },
     { fieldContainerId: "FC-002", origin: { id: "CP-002" }, massKg: 45.0, refrigerant: "CFC-12", collectionLog: {}, provenanceOk: true },
     { fieldContainerId: "FC-003", origin: { id: "CP-003" }, massKg: 0.7, refrigerant: "HFC-134a", collectionLog: {}, provenanceOk: true },
+    { fieldContainerId: "FC-005", origin: { id: "CP-005" }, massKg: 1.8, refrigerant: "HCFC-22", collectionLog: {}, provenanceOk: true },
+    { fieldContainerId: "FC-006", origin: { id: "CP-006" }, massKg: 0.15, refrigerant: "HFC-134a", collectionLog: {}, provenanceOk: true },
+    { fieldContainerId: "FC-008", origin: { id: "CP-008" }, massKg: 60.0, refrigerant: "HFC-404A", collectionLog: {}, provenanceOk: true },
+    { fieldContainerId: "FC-009", origin: { id: "CP-009" }, massKg: 1.2, refrigerant: "HFC-134a", collectionLog: {}, provenanceOk: true },
+    { fieldContainerId: "FC-010", origin: { id: "CP-010" }, massKg: 4.5, refrigerant: "HFC-410A", collectionLog: {}, provenanceOk: true },
   ];
 }
 if (startStage !== "COLLECTION" && startStage !== "AGGREGATION") {
