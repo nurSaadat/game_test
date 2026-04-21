@@ -6,17 +6,26 @@ Built with vanilla JavaScript and the HTML5 Canvas API. No external dependencies
 
 ## Getting Started
 
-1. Open `src/index.html` in a modern web browser.
+The game uses ES modules, so it must be served over HTTP (opening the HTML file directly won't work). No dependencies to install — just start a local server:
 
-That's it — no install, no build step.
+```bash
+# with Python (built into macOS/Linux)
+cd src
+python3 -m http.server 8000
+
+# or with Node.js
+npx serve src
+```
+
+Then open **http://localhost:8000** in your browser.
 
 **Dev shortcut:** Jump to a specific stage with a URL parameter:
 
 ```
-index.html?stage=AGGREGATION
-index.html?stage=TRANSPORT
-index.html?stage=DESTRUCTION
-index.html?stage=SCORECARD
+http://localhost:8000?stage=AGGREGATION
+http://localhost:8000?stage=TRANSPORT
+http://localhost:8000?stage=DESTRUCTION
+http://localhost:8000?stage=SCORECARD
 ```
 
 ## How to Play
