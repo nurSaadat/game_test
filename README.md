@@ -1,4 +1,4 @@
-# CryoDestroy: Refrigerant Rescue
+# CryoDestroy
 
 An educational strategy game about refrigerant destruction and carbon credit generation. Guide refrigerant containers through a 4-stage chain of custody — from field collection to high-temperature destruction — and earn carbon credits based on your performance.
 

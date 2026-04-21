@@ -47,7 +47,7 @@ export class ScorecardScene extends Phaser.Scene {
     g.lineStyle(1, 0x30363d, 1);
     g.lineBetween(0, 78, 900, 78);
 
-    this.add.text(450, 24, "GHG STATEMENT — CryoDestroy 2026", {
+    this.add.text(450, 24, "GHG STATEMENT — CryoDestroy", {
       fontFamily: "monospace", fontSize: "20px", color: "#79c0ff", fontStyle: "bold",
     }).setOrigin(0.5);
     this.add.text(450, 50, "Reporting Period: " + d.reportingPeriod + "  |  Containers Destroyed: " + d.batches.length, {
