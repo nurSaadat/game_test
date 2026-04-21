@@ -15,6 +15,7 @@ export const REFRIGERANTS = [
   // INELIGIBLE (red herring items in collection stage)
   { id: "CO2-R744",  type: "OTHER", GWP: 1,    eligible: false, colour: "#EF9A9A" },
   { id: "Ammonia",   type: "OTHER", GWP: 0,    eligible: false, colour: "#CE93D8" },
+  { id: "R-290",     type: "OTHER", GWP: 3,    eligible: false, colour: "#B0BEC5" },
 ];
 
 // Default substitute refrigerant for leakage calc (Protocol Section 7.3.4)
