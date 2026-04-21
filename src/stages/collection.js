@@ -26,9 +26,7 @@ export class CollectionScene extends Phaser.Scene {
       fontFamily: "monospace", fontSize: "12px", color: "#c8d1da",
     }).setDepth(20).setAlpha(0.9);
 
-    this.progressText = this.add.text(20, 572, "Collected: 0 / 3", {
-      fontFamily: "monospace", fontSize: "13px", color: "#8b949e",
-    }).setDepth(21);
+    this._buildCanisterSlots();
 
     this.nextBtnGroup = this.add.container(0, 0).setDepth(22);
     const nbg = this.add.graphics();
@@ -670,7 +668,6 @@ export class CollectionScene extends Phaser.Scene {
       }
 
       this._markCollected(cp);
-      this.progressText.setText("Collected: " + this.collected.size + " / 3");
       if (this.collected.size >= 3) this.nextBtnGroup.setVisible(true);
     });
   }
@@ -683,6 +680,136 @@ export class CollectionScene extends Phaser.Scene {
     overlay.fillRoundedRect(cp.position.x - 5, cp.position.y - 5, cp.hitW + 10, cp.hitH + 10, 6);
     overlay.lineStyle(2, 0x3fb950, 0.6);
     overlay.strokeRoundedRect(cp.position.x - 5, cp.position.y - 5, cp.hitW + 10, cp.hitH + 10, 6);
+
+    this._fillCanisterSlot(cp.refrigerant);
+  }
+
+  // ═══════════════════════ CANISTER COLLECTION TRAY ═══════════════════════
+
+  _buildCanisterSlots() {
+    this.canisterSlots = [];
+    this.canistersFilled = 0;
+    const startX = 18;
+    const slotY = 540;
+    const slotW = 52;
+    const slotH = 43;
+    const gap = 10;
+
+    // "COLLECTED" label
+    this.add.text(startX, slotY - 2, "COLLECTED", {
+      fontFamily: "monospace", fontSize: "8px", color: "#555d6b",
+    }).setDepth(21);
+
+    for (let i = 0; i < 3; i++) {
+      const sx = startX + i * (slotW + gap);
+      const sy = slotY + 10;
+
+      // Placeholder shadow canister
+      const placeholder = this.add.graphics().setDepth(21);
+      this._drawCanisterShape(placeholder, sx, sy, slotW, slotH, true);
+
+      // Slot number
+      this.add.text(sx + slotW / 2, sy + slotH / 2, String(i + 1), {
+        fontFamily: "monospace", fontSize: "14px", color: "#2a3444", fontStyle: "bold",
+      }).setOrigin(0.5).setDepth(21);
+
+      this.canisterSlots.push({ x: sx, y: sy, w: slotW, h: slotH, filled: false });
+    }
+  }
+
+  _fillCanisterSlot(refrigerant) {
+    const slot = this.canisterSlots[this.canistersFilled];
+    if (!slot) return;
+
+    const { x, y, w, h } = slot;
+    slot.filled = true;
+    this.canistersFilled++;
+
+    // Filled canister container — appears with a scale-up tween
+    const container = this.add.container(x + w / 2, y + h / 2).setDepth(23);
+    container.setScale(0);
+
+    const gfx = this.add.graphics();
+    this._drawCanisterShape(gfx, -w / 2, -h / 2, w, h, false);
+    container.add(gfx);
+
+    // Gas type label on canister
+    const label = this.add.text(0, -2, refrigerant, {
+      fontFamily: "monospace", fontSize: "7px", color: "#e6edf3", fontStyle: "bold",
+    }).setOrigin(0.5);
+    container.add(label);
+
+    // Slot counter text
+    const counter = this.add.text(0, 12, this.canistersFilled + "/3", {
+      fontFamily: "monospace", fontSize: "7px", color: "#8b949e",
+    }).setOrigin(0.5);
+    container.add(counter);
+
+    // Pop-in animation
+    this.tweens.add({
+      targets: container,
+      scale: 1,
+      duration: 400,
+      ease: "Back.easeOut",
+    });
+
+    // Brief glow effect
+    const glow = this.add.graphics().setDepth(22);
+    glow.fillStyle(0x3fb950, 0.25);
+    glow.fillRoundedRect(x - 3, y - 3, w + 6, h + 6, 6);
+    this.tweens.add({
+      targets: glow,
+      alpha: 0,
+      duration: 800,
+      delay: 300,
+      onComplete: () => glow.destroy(),
+    });
+  }
+
+  _drawCanisterShape(g, x, y, w, h, isPlaceholder) {
+    const neckW = w * 0.3;
+    const neckH = h * 0.22;
+    const neckX = x + (w - neckW) / 2;
+    const bodyY = y + neckH;
+    const bodyH = h - neckH;
+
+    if (isPlaceholder) {
+      // Ghost canister outline
+      g.lineStyle(1, 0x2a3444, 0.8);
+      g.strokeRoundedRect(neckX, y, neckW, neckH + 2, 2);
+      g.strokeRoundedRect(x + 2, bodyY, w - 4, bodyH, 4);
+      // Dashed fill hint
+      g.fillStyle(0x1a2230, 0.5);
+      g.fillRoundedRect(neckX, y, neckW, neckH + 2, 2);
+      g.fillRoundedRect(x + 2, bodyY, w - 4, bodyH, 4);
+    } else {
+      // Canister neck (valve area)
+      g.fillStyle(0x666666, 1);
+      g.fillRoundedRect(neckX, y, neckW, neckH + 4, 2);
+      // Valve knob
+      g.fillStyle(0xf85149, 1);
+      g.fillCircle(x + w / 2, y + 2, 3);
+
+      // Main body — steel gradient effect
+      g.fillStyle(0x4a7a5a, 1);
+      g.fillRoundedRect(x + 2, bodyY, w - 4, bodyH, 4);
+      // Highlight stripe
+      g.fillStyle(0x5a9a6a, 0.5);
+      g.fillRect(x + 6, bodyY + 3, 4, bodyH - 6);
+      // Dark edge
+      g.fillStyle(0x3a6a4a, 0.5);
+      g.fillRect(x + w - 10, bodyY + 3, 4, bodyH - 6);
+
+      // Pressure gauge circle
+      g.fillStyle(0x1a2332, 1);
+      g.fillCircle(x + w / 2, bodyY + bodyH * 0.65, 5);
+      g.lineStyle(1, 0x3fb950, 1);
+      g.strokeCircle(x + w / 2, bodyY + bodyH * 0.65, 5);
+
+      // Border
+      g.lineStyle(1, 0x3fb950, 0.6);
+      g.strokeRoundedRect(x + 2, bodyY, w - 4, bodyH, 4);
+    }
   }
 
   _showCollectionLogForm(cp, callback) {
