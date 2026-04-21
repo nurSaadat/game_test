@@ -324,7 +324,7 @@ export class TransportScene extends Phaser.Scene {
       const t = types[Math.floor(Math.random() * types.length)];
       this.obstacles.push({
         ...t,
-        x: 720 + i * 120,
+        x: 720 + i * 144,
         lane: Math.floor(Math.random() * 3),
         width: 52,
         height: 52,
