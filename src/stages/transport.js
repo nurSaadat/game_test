@@ -1,286 +1,214 @@
-// Stage 3: Avoid-obstacle mini-game
-// Based on Protocol Section 8.1.4 (Transportation Segments) & Section 9 (Reconciliation)
+export class TransportScene extends Phaser.Scene {
+  constructor() {
+    super({ key: "TransportScene" });
+  }
 
-export class TransportStage {
-  constructor(gameState, canvas, ctx, hud, advanceStage) {
-    this.state        = gameState;
-    this.canvas       = canvas;
-    this.ctx          = ctx;
-    this.hud          = hud;
-    this.advanceStage = advanceStage;
+  create() {
+    this.gs = this.registry.get("gameState");
 
     this.truck = {
-      x:    80,
-      lane: 1,                 // 0=top 1=mid 2=bottom
+      x: 80,
+      lane: 1,
       laneY: [155, 305, 455],
-      visualY: 305,            // interpolated Y for smooth movement
-      width:  90,
+      visualY: 305,
+      width: 90,
       height: 50,
       containerLeakPercent: 0,
     };
 
-    this.obstacles    = [];
+    this.obstacles = [];
     this.floatingTexts = [];
-    this.speed        = 3;
-    this.distance     = 0;
-    this.totalDist    = 2000;
-    this.roadOffset   = 0;
-
-    this.active            = false;
-    this.inspectionPaused  = false;
-    this.leakWarningShown  = false;
-
-    this._keyHandler = null;
-  }
-
-  start() {
-    this.active      = true;
-    this.distance    = 0;
-    this.roadOffset  = 0;
-    this.floatingTexts = [];
+    this.speed = 3;
+    this.distance = 0;
+    this.totalDist = 2000;
+    this.roadOffset = 0;
+    this.active = true;
+    this.inspectionPaused = false;
     this.leakWarningShown = false;
-    this.truck.lane  = 1;
-    this.truck.visualY = this.truck.laneY[1];
-    this.truck.containerLeakPercent = 0;
 
-    this.spawnObstacles();
+    this.gfx = this.add.graphics();
 
-    this._keyHandler = (e) => {
-      if (e.key === "ArrowUp"   && this.truck.lane > 0) this.truck.lane--;
-      if (e.key === "ArrowDown" && this.truck.lane < 2) this.truck.lane++;
-    };
-    document.addEventListener("keydown", this._keyHandler);
+    this._spawnObstacles();
+
+    // Persistent text elements (updated each frame, not recreated)
+    this.distText = this.add.text(10, 3, "", {
+      fontFamily: "monospace", fontSize: "11px", color: "#ffffff",
+    }).setDepth(10);
+    this.facilityText = this.add.text(888, 3, "FACILITY →", {
+      fontFamily: "monospace", fontSize: "11px", color: "#79c0ff",
+    }).setOrigin(1, 0).setDepth(10);
+    this.leakLabel = this.add.text(670, 30, "CUMULATIVE LEAK:", {
+      fontFamily: "monospace", fontSize: "11px", color: "#8b949e",
+    }).setDepth(10);
+    this.leakText = this.add.text(670, 50, "0.0%", {
+      fontFamily: "monospace", fontSize: "22px", color: "#3fb950", fontStyle: "bold",
+    }).setDepth(10);
+    this.controlsText = this.add.text(20, 584, "↑↓ arrow keys to change lane", {
+      fontFamily: "monospace", fontSize: "11px", color: "#555d6b",
+    }).setDepth(10);
+
+    this.cursors = this.input.keyboard.addKeys({
+      up: Phaser.Input.Keyboard.KeyCodes.UP,
+      down: Phaser.Input.Keyboard.KeyCodes.DOWN,
+    });
+    this.canSwitch = true;
   }
 
-  stop() {
-    document.removeEventListener("keydown", this._keyHandler);
-    this.active = false;
-  }
-
-  update(dt) {
+  update(time, delta) {
     if (!this.active || this.inspectionPaused) return;
 
-    const step = this.speed * (dt / 16);
+    if (this.cursors.up.isDown && this.canSwitch && this.truck.lane > 0) {
+      this.truck.lane--;
+      this.canSwitch = false;
+    } else if (this.cursors.down.isDown && this.canSwitch && this.truck.lane < 2) {
+      this.truck.lane++;
+      this.canSwitch = false;
+    }
+    if (!this.cursors.up.isDown && !this.cursors.down.isDown) {
+      this.canSwitch = true;
+    }
 
-    // Scroll road and obstacles
+    const step = this.speed * (delta / 16);
+
     this.roadOffset = (this.roadOffset + step) % 50;
     this.obstacles.forEach(o => { o.x -= step; });
     this.obstacles = this.obstacles.filter(o => o.x > -80);
 
-    // Smooth lane Y interpolation
     const targetY = this.truck.laneY[this.truck.lane];
-    this.truck.visualY += (targetY - this.truck.visualY) * Math.min(1, 0.14 * (dt / 16));
+    this.truck.visualY += (targetY - this.truck.visualY) * Math.min(1, 0.14 * (delta / 16));
 
-    this.checkCollisions();
+    this._checkCollisions();
 
-    // Leak threshold warning
     if (this.truck.containerLeakPercent > 10 && !this.leakWarningShown) {
       this.leakWarningShown = true;
-      this.state.flags.leakagePenalty = true;
-      this.hud.showAlert("\u26a0\ufe0f Cumulative loss >10%! Investigation required per Protocol Section 9.");
+      this.gs.flags.leakagePenalty = true;
+      this.gs.hud.showAlert("⚠️ Cumulative loss >10%! Investigation required per Protocol Section 9.");
     }
 
-    // Floating damage texts drift upward
     this.floatingTexts = this.floatingTexts
       .map(ft => ({ ...ft, y: ft.y - 0.9, life: ft.life - 1 }))
       .filter(ft => ft.life > 0);
 
     this.distance += step;
     if (this.distance >= this.totalDist) {
-      this.completeStage();
+      this._completeStage();
     }
+
+    this._render();
   }
 
-  render(ctx) {
-    this._drawRoad(ctx);
-    this._drawObstacles(ctx);
-    this._drawTruck(ctx);
-    this._drawFloatingTexts(ctx);
-    this._drawHUD(ctx);
+  _render() {
+    const g = this.gfx;
+    g.clear();
+
+    this._drawRoad(g);
+    this._drawObstacles(g);
+    this._drawTruck(g);
+    this._updateHUDText();
   }
 
-  // ─────────────────────────── DRAW HELPERS ─────────────────────────────
+  _drawRoad(g) {
+    g.fillStyle(0x0d1b2a, 1);
+    g.fillRect(0, 0, 900, 128);
+    g.fillStyle(0x242424, 1);
+    g.fillRect(0, 128, 900, 472);
+    g.fillStyle(0x3a3020, 1);
+    g.fillRect(0, 128, 900, 20);
+    g.fillRect(0, 560, 900, 20);
 
-  _drawRoad(ctx) {
-    // Sky
-    ctx.fillStyle = "#0d1b2a";
-    ctx.fillRect(0, 0, 900, 128);
+    g.lineStyle(3, 0xcccccc, 1);
+    g.lineBetween(0, 148, 900, 148);
+    g.lineBetween(0, 562, 900, 562);
 
-    // Road surface
-    ctx.fillStyle = "#242424";
-    ctx.fillRect(0, 128, 900, 472);
+    // Lane dividers — draw manually with dashes
+    const dashLen = 30, gapLen = 20;
+    g.lineStyle(2, 0x777777, 1);
+    for (const ly of [252, 402]) {
+      let dx = -this.roadOffset;
+      while (dx < 900) {
+        const x1 = Math.max(0, dx);
+        const x2 = Math.min(900, dx + dashLen);
+        if (x2 > x1) {
+          g.lineBetween(x1, ly, x2, ly);
+        }
+        dx += dashLen + gapLen;
+      }
+    }
 
-    // Road shoulders
-    ctx.fillStyle = "#3a3020";
-    ctx.fillRect(0, 128, 900, 20);
-    ctx.fillRect(0, 560, 900, 20);
-
-    // White edge lines
-    ctx.strokeStyle = "#cccccc";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(0, 148); ctx.lineTo(900, 148); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, 562); ctx.lineTo(900, 562); ctx.stroke();
-
-    // Lane dividers (animated dashes)
-    ctx.strokeStyle = "#777";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([30, 20]);
-    ctx.lineDashOffset = -this.roadOffset;
-    ctx.beginPath(); ctx.moveTo(0, 252); ctx.lineTo(900, 252); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, 402); ctx.lineTo(900, 402); ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Distance progress bar (very top strip)
-    ctx.fillStyle = "#0d1117";
-    ctx.fillRect(0, 0, 900, 20);
+    // Progress bar
+    g.fillStyle(0x0d1117, 1);
+    g.fillRect(0, 0, 900, 20);
     const prog = Math.min(1, this.distance / this.totalDist);
-    ctx.fillStyle = "#238636";
-    ctx.fillRect(0, 0, prog * 900, 20);
-
-    ctx.fillStyle = "#fff";
-    ctx.font = "11px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText("DISTANCE: " + Math.floor(this.distance) + " / " + this.totalDist + " m", 10, 14);
-    ctx.fillStyle = "#79c0ff";
-    ctx.textAlign = "right";
-    ctx.fillText("FACILITY \u2192", 888, 14);
-    ctx.textAlign = "left";
+    g.fillStyle(0x238636, 1);
+    g.fillRect(0, 0, prog * 900, 20);
   }
 
-  _drawTruck(ctx) {
+  _drawTruck(g) {
     const tx = this.truck.x;
     const ty = this.truck.visualY - this.truck.height / 2;
     const tw = this.truck.width;
     const th = this.truck.height;
 
-    // Container body
-    ctx.fillStyle = "#3a6349";
-    ctx.fillRect(tx, ty, tw - 24, th);
+    g.fillStyle(0x3a6349, 1);
+    g.fillRect(tx, ty, tw - 24, th);
+    g.fillStyle(0xf0c030, 1);
+    g.fillRect(tx + 2, ty + th - 8, tw - 26, 6);
+    g.fillStyle(0x2d4f38, 1);
+    g.fillRect(tx + tw - 24, ty + 5, 24, th - 5);
+    g.fillStyle(0x79c0ff, 1);
+    g.fillRect(tx + tw - 20, ty + 8, 14, 14);
 
-    // Danger stripes on container
-    ctx.fillStyle = "#f0c030";
-    ctx.fillRect(tx + 2, ty + th - 8, tw - 26, 6);
-
-    // Cab
-    ctx.fillStyle = "#2d4f38";
-    ctx.fillRect(tx + tw - 24, ty + 5, 24, th - 5);
-
-    // Windshield
-    ctx.fillStyle = "#79c0ff";
-    ctx.fillRect(tx + tw - 20, ty + 8, 14, 14);
-
-    // Wheels
-    ctx.fillStyle = "#111";
-    const wheels = [
-      [tx + 12, ty + th],
-      [tx + 52, ty + th],
-      [tx + tw - 10, ty + th],
-    ];
+    g.fillStyle(0x111111, 1);
+    const wheels = [[tx + 12, ty + th], [tx + 52, ty + th], [tx + tw - 10, ty + th]];
     wheels.forEach(([wx, wy]) => {
-      ctx.beginPath(); ctx.arc(wx, wy, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = "#444"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(wx, wy, 5, 0, Math.PI * 2); ctx.stroke();
+      g.fillCircle(wx, wy, 9);
+      g.lineStyle(2, 0x444444, 1);
+      g.strokeCircle(wx, wy, 5);
     });
-
-    // Label
-    ctx.fillStyle = "#e6edf3";
-    ctx.font = "8px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText("CRYO", tx + 5, ty + 20);
-    ctx.fillText("REFRIG.", tx + 5, ty + 30);
   }
 
-  _drawObstacles(ctx) {
+  _drawObstacles(g) {
     const laneY = this.truck.laneY;
     this.obstacles.forEach(obs => {
       const cy = laneY[obs.lane];
-
       if (obs.type === "pothole") {
-        ctx.fillStyle = "#0a0a0a";
-        ctx.beginPath();
-        ctx.ellipse(obs.x + 20, cy + 18, 22, 10, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#2a2a2a";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        // crack lines
-        ctx.strokeStyle = "#111";
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(obs.x + 10, cy + 12); ctx.lineTo(obs.x + 30, cy + 24); ctx.stroke();
-
+        g.fillStyle(0x0a0a0a, 1);
+        g.fillEllipse(obs.x + 20, cy + 18, 44, 20);
+        g.lineStyle(1, 0x2a2a2a, 1);
+        g.strokeEllipse(obs.x + 20, cy + 18, 44, 20);
       } else if (obs.type === "debris") {
-        ctx.fillStyle = "#8b7355";
-        ctx.beginPath();
-        const pts = [[0, 0],[22,-20],[44,-12],[48,6],[38,22],[8,18]];
-        ctx.moveTo(obs.x + pts[0][0], cy + pts[0][1]);
-        pts.slice(1).forEach(([dx, dy]) => ctx.lineTo(obs.x + dx, cy + dy));
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "#5a4a35";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
+        g.fillStyle(0x8b7355, 1);
+        g.fillTriangle(obs.x, cy, obs.x + 24, cy - 20, obs.x + 48, cy + 6);
+        g.lineStyle(1, 0x5a4a35, 1);
+        g.strokeTriangle(obs.x, cy, obs.x + 24, cy - 20, obs.x + 48, cy + 6);
       } else if (obs.type === "inspection") {
-        // Posts
-        ctx.fillStyle = "#ddd";
-        ctx.fillRect(obs.x + 5,  cy - 75, 6, 90);
-        ctx.fillRect(obs.x + 37, cy - 75, 6, 90);
-        // Striped barrier arm
+        g.fillStyle(0xdddddd, 1);
+        g.fillRect(obs.x + 5, cy - 75, 6, 90);
+        g.fillRect(obs.x + 37, cy - 75, 6, 90);
         for (let s = 0; s < 5; s++) {
-          ctx.fillStyle = s % 2 === 0 ? "#f85149" : "#e6edf3";
-          ctx.fillRect(obs.x, cy - 80 + s * 8, 48, 8);
+          g.fillStyle(s % 2 === 0 ? 0xf85149 : 0xe6edf3, 1);
+          g.fillRect(obs.x, cy - 80 + s * 8, 48, 8);
         }
-        // Sign
-        ctx.fillStyle = "#ffa726";
-        ctx.font = "bold 9px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("INSPECT", obs.x + 24, cy - 84);
-        ctx.textAlign = "left";
       }
     });
   }
 
-  _drawFloatingTexts(ctx) {
-    this.floatingTexts.forEach(ft => {
-      ctx.globalAlpha = Math.min(1, ft.life / 25);
-      ctx.fillStyle   = "#f85149";
-      ctx.font        = "bold 13px monospace";
-      ctx.textAlign   = "center";
-      ctx.fillText(ft.text, ft.x, ft.y);
-    });
-    ctx.globalAlpha = 1;
-    ctx.textAlign   = "left";
+  _updateHUDText() {
+    const leak = this.truck.containerLeakPercent;
+    const leakColorStr = leak > 10 ? "#f85149" : leak > 5 ? "#ffa726" : "#3fb950";
+
+    const g = this.gfx;
+    g.fillStyle(0x0d1117, 1);
+    g.fillRect(660, 22, 230, 60);
+    g.lineStyle(1, 0x30363d, 1);
+    g.strokeRect(660, 22, 230, 60);
+
+    this.distText.setText("DISTANCE: " + Math.floor(this.distance) + " / " + this.totalDist + " m");
+    this.leakText.setText(leak.toFixed(1) + "%");
+    this.leakText.setColor(leakColorStr);
   }
 
-  _drawHUD(ctx) {
-    // Leak % box
-    const leak      = this.truck.containerLeakPercent;
-    const leakColor = leak > 10 ? "#f85149" : leak > 5 ? "#ffa726" : "#3fb950";
-
-    ctx.fillStyle   = "#0d1117";
-    ctx.fillRect(660, 22, 230, 60);
-    ctx.strokeStyle = "#30363d";
-    ctx.lineWidth   = 1;
-    ctx.strokeRect(660, 22, 230, 60);
-
-    ctx.fillStyle = "#8b949e";
-    ctx.font      = "11px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText("CUMULATIVE LEAK:", 670, 40);
-    ctx.fillStyle = leakColor;
-    ctx.font      = "bold 22px monospace";
-    ctx.fillText(leak.toFixed(1) + "%", 670, 66);
-
-    // Controls hint
-    ctx.fillStyle = "#555d6b";
-    ctx.font      = "11px monospace";
-    ctx.fillText("\u2191\u2193 arrow keys to change lane", 20, 590);
-  }
-
-  // ─────────────────────────── COLLISIONS ──────────────────────────────
-
-  checkCollisions() {
+  _checkCollisions() {
     const tx = this.truck.x;
     const ty = this.truck.visualY - this.truck.height / 2;
     const tw = this.truck.width;
@@ -288,16 +216,16 @@ export class TransportStage {
 
     this.obstacles = this.obstacles.filter(obs => {
       const cy = this.truck.laneY[obs.lane];
-      const hit = tx < obs.x + obs.width  &&
-                  tx + tw > obs.x         &&
-                  ty < cy + obs.height / 2 &&
-                  ty + th > cy - obs.height / 2;
+      const hit = tx < obs.x + obs.width &&
+        tx + tw > obs.x &&
+        ty < cy + obs.height / 2 &&
+        ty + th > cy - obs.height / 2;
 
-      if (!hit) return true; // keep obstacle
+      if (!hit) return true;
 
       if (obs.type === "inspection") {
         this.inspectionPaused = true;
-        const hasDocs = this.hasDocumentation();
+        const hasDocs = this._hasDocumentation();
 
         const html = `
           <div style="
@@ -306,9 +234,9 @@ export class TransportStage {
             padding:24px; width:360px; color:#e6edf3; font-family:monospace;
             z-index:200; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.7);
           ">
-            <h3 style="color:#ffa726; margin:0 0 10px;">\uD83D\uDEC3 BORDER INSPECTION</h3>
+            <h3 style="color:#ffa726; margin:0 0 10px;">🛃 BORDER INSPECTION</h3>
             <p style="font-size:12px; color:#8b949e; margin:0 0 18px;">
-              Protocol \u00a78.1.4: Bills of lading and container IDs required.
+              Protocol §8.1.4: Bills of lading and container IDs required.
             </p>
             <button id="showDocsBtn" style="
               background:#238636; color:#fff; border:none; border-radius:4px;
@@ -316,73 +244,78 @@ export class TransportStage {
             ">Show Documents</button>
           </div>`;
 
-        this.hud.showPanel(html);
+        this.gs.hud.showPanel(html);
 
         setTimeout(() => {
           const btn = document.getElementById("showDocsBtn");
           if (!btn) return;
           btn.addEventListener("click", () => {
-            this.hud.clearOverlay();
+            this.gs.hud.clearOverlay();
             this.inspectionPaused = false;
             if (hasDocs) {
-              this.hud.showSuccess("\u2705 Documentation OK! Carry on.");
+              this.gs.hud.showSuccess("✅ Documentation OK! Carry on.");
             } else {
               this.truck.containerLeakPercent += 15;
-              this.state.flags.leakagePenalty  = true;
-              this.hud.showAlert("\u274c Missing documentation! +15% leak penalty.");
+              this.gs.flags.leakagePenalty = true;
+              this.gs.hud.showAlert("❌ Missing documentation! +15% leak penalty.");
             }
           });
         }, 0);
       } else {
-        // pothole / debris
         obs.effect();
         const label = obs.type === "pothole" ? "-1.5% LEAK" : "-3% LEAK";
-        this.showFloatingText(label, tx + 45, this.truck.visualY - 35);
+        this._showFloatingText(label, tx + 45, this.truck.visualY - 35);
       }
 
-      return false; // consume obstacle
+      return false;
     });
   }
 
-  hasDocumentation() {
-    return this.state.containers.length > 0 && !this.state.flags.provenanceGapPenalty;
+  _hasDocumentation() {
+    return this.gs.containers.length > 0 && !this.gs.flags.provenanceGapPenalty;
   }
 
-  showFloatingText(text, x, y) {
-    this.floatingTexts.push({ text, x, y, life: 55 });
+  _showFloatingText(text, x, y) {
+    const ft = this.add.text(x, y, text, {
+      fontFamily: "monospace", fontSize: "13px", color: "#f85149", fontStyle: "bold",
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: ft, y: y - 50, alpha: 0, duration: 1400, ease: "Power2",
+      onComplete: () => ft.destroy(),
+    });
   }
 
-  completeStage() {
+  _completeStage() {
     this.active = false;
-    this.stop();
 
     const leakFrac = Math.min(1, this.truck.containerLeakPercent / 100);
-    this.state.aggregatedContainers.forEach(c => {
+    this.gs.aggregatedContainers.forEach(c => {
       c.eligibleMassKg = (c.eligibleMassKg || c.massKg) * (1 - leakFrac);
     });
-    this.state.transportedContainers = this.state.aggregatedContainers.map(c => ({ ...c }));
-    this.advanceStage();
+    this.gs.transportedContainers = this.gs.aggregatedContainers.map(c => ({ ...c }));
+    this.gs.hud.clearOverlay();
+    this.scene.start("TransitionScene", { nextKey: "DESTRUCTION" });
   }
 
-  spawnObstacles() {
+  _spawnObstacles() {
     const types = [
       {
-        type:   "pothole",
+        type: "pothole",
         effect: () => {
           this.truck.containerLeakPercent += 1.5;
-          this.state.score.projectEmissions += 20;
+          this.gs.score.projectEmissions += 20;
         },
       },
       {
-        type:   "debris",
+        type: "debris",
         effect: () => {
           this.truck.containerLeakPercent += 3.0;
-          this.state.score.projectEmissions += 50;
+          this.gs.score.projectEmissions += 50;
         },
       },
       {
-        type:   "inspection",
-        effect: () => {}, // handled in checkCollisions
+        type: "inspection",
+        effect: () => {},
       },
     ];
 
@@ -391,9 +324,9 @@ export class TransportStage {
       const t = types[Math.floor(Math.random() * types.length)];
       this.obstacles.push({
         ...t,
-        x:      720 + i * 120,
-        lane:   Math.floor(Math.random() * 3),
-        width:  52,
+        x: 720 + i * 120,
+        lane: Math.floor(Math.random() * 3),
+        width: 52,
         height: 52,
       });
     }

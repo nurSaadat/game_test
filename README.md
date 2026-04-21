@@ -2,7 +2,7 @@
 
 An educational strategy game about refrigerant destruction and carbon credit generation. Guide refrigerant containers through a 4-stage chain of custody — from field collection to high-temperature destruction — and earn carbon credits based on your performance.
 
-Built with vanilla JavaScript and the HTML5 Canvas API. No external dependencies.
+Built with [Phaser 3](https://phaser.io/) (loaded via CDN) and vanilla JavaScript. No install required.
 
 ## Getting Started
 
@@ -97,16 +97,17 @@ After all containers are destroyed, you receive a GHG Statement showing:
 
 ```
 src/
-├── index.html              Entry point (900x600 canvas)
-├── main.js                 Game loop, stage manager, transitions
+├── index.html              Entry point (loads Phaser 3 via CDN)
+├── main.js                 Phaser config, game state, scene registry
 ├── stages/
-│   ├── collection.js       Stage 1: field collection + form validation
-│   ├── aggregation.js      Stage 2: sorting + GC lab analysis
-│   ├── transport.js        Stage 3: truck driving mini-game
-│   └── destruction.js      Stage 4: chamber temperature management
+│   ├── collection.js       Stage 1: field collection (Phaser Scene)
+│   ├── aggregation.js      Stage 2: sorting + GC lab (Phaser Scene)
+│   ├── transport.js        Stage 3: truck driving (Phaser Scene)
+│   ├── destruction.js      Stage 4: chamber management (Phaser Scene)
+│   └── transition.js       Inter-stage transition overlay (Phaser Scene)
 ├── ui/
-│   ├── hud.js              HUD, alerts, overlay manager
-│   └── scorecard.js        Final GHG statement + grading
+│   ├── hud.js              HUD: DOM overlay for alerts/panels
+│   └── scorecard.js        Final GHG statement (Phaser Scene)
 └── data/
     └── refrigerants.js     Refrigerant metadata (GWP, eligibility)
 ```

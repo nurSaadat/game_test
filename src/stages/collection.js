@@ -1,190 +1,155 @@
-// Stage 1: Field collection
-// Based on Protocol Section 8.1.2 (Point of Origin) verification requirements
-
-export class CollectionStage {
-  constructor(gameState, canvas, ctx, hud, advanceStage) {
-    this.state        = gameState;
-    this.canvas       = canvas;
-    this.ctx          = ctx;
-    this.hud          = hud;
-    this.advanceStage = advanceStage;
-
-    this.collectionPoints = [];
-    this.collected        = new Set(); // IDs of successfully collected CPs
-    this._clickHandler    = null;
+export class CollectionScene extends Phaser.Scene {
+  constructor() {
+    super({ key: "CollectionScene" });
   }
 
-  start() {
+  create() {
+    this.gs = this.registry.get("gameState");
+    this.collected = new Set();
+
     this.generateScene();
-    this._clickHandler = (e) => this._handleClick(e);
-    this.canvas.addEventListener("click", this._clickHandler);
-  }
 
-  stop() {
-    this.canvas.removeEventListener("click", this._clickHandler);
-  }
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1a2332, 1);
+    bg.fillRect(0, 0, 900, 600);
 
-  update(_dt) { /* purely event-driven */ }
-
-  render(ctx) {
-    // Background — dark factory floor
-    ctx.fillStyle = "#1a2332";
-    ctx.fillRect(0, 0, 900, 600);
-
-    // Grid lines for depth
-    ctx.strokeStyle = "#1e2940";
-    ctx.lineWidth = 1;
+    bg.lineStyle(1, 0x1e2940, 1);
     for (let x = 0; x < 900; x += 60) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 600); ctx.stroke();
+      bg.lineBetween(x, 0, x, 600);
     }
     for (let y = 0; y < 600; y += 60) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(900, y); ctx.stroke();
+      bg.lineBetween(0, y, 900, y);
     }
 
-    // Title
-    ctx.fillStyle = "#79c0ff";
-    ctx.font = "bold 20px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText("STAGE 1 \u2014 FIELD COLLECTION", 20, 36);
-    ctx.fillStyle = "#8b949e";
-    ctx.font = "13px monospace";
-    ctx.fillText("Click eligible equipment to collect. Avoid ineligible refrigerants.", 20, 58);
-
-    // Collection points
-    this.collectionPoints.forEach(cp => {
-      const { x, y } = cp.position;
-      const collected = this.collected.has(cp.id);
-      const eligible  = cp.eligible !== false;
-
-      // Card background
-      ctx.fillStyle = collected ? "#172b1f"
-                    : eligible  ? "#1b2b1e"
-                                : "#2b1b1b";
-      ctx.fillRect(x, y, 170, 110);
-
-      // Card border
-      ctx.strokeStyle = collected ? "#3fb950"
-                      : eligible  ? "#28613a"
-                                  : "#6b2323";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, 170, 110);
-
-      // Equipment type
-      ctx.fillStyle = collected ? "#7ee787" : "#e6edf3";
-      ctx.font = "bold 12px monospace";
-      ctx.textAlign = "left";
-      ctx.fillText(cp.equipmentType, x + 9, y + 22);
-
-      // Refrigerant & mass
-      ctx.fillStyle = "#8b949e";
-      ctx.font = "12px monospace";
-      ctx.fillText(cp.refrigerant, x + 9, y + 42);
-      ctx.fillText(cp.massKg + " kg", x + 9, y + 60);
-      ctx.fillStyle = "#555d6b";
-      ctx.font = "11px monospace";
-      ctx.fillText(cp.status, x + 9, y + 76);
-      ctx.fillText(cp.id, x + 9, y + 92);
-
-      // Collected checkmark
-      if (collected) {
-        ctx.fillStyle = "#3fb950";
-        ctx.font = "bold 32px monospace";
-        ctx.textAlign = "right";
-        ctx.fillText("\u2713", x + 162, y + 80);
-        ctx.textAlign = "left";
-      }
-
-      // Ineligible badge
-      if (!eligible) {
-        ctx.fillStyle = "#f85149";
-        ctx.font = "bold 10px monospace";
-        ctx.fillText("INELIGIBLE", x + 9, y + 104);
-      }
+    this.add.text(20, 18, "STAGE 1 — FIELD COLLECTION", {
+      fontFamily: "monospace", fontSize: "20px", color: "#79c0ff", fontStyle: "bold",
+    });
+    this.add.text(20, 46, "Click eligible equipment to collect. Avoid ineligible refrigerants.", {
+      fontFamily: "monospace", fontSize: "13px", color: "#8b949e",
     });
 
-    // NEXT STAGE button — only when all 3 eligible items are collected
-    if (this.collected.size >= 3) {
-      ctx.fillStyle = "#238636";
-      ctx.beginPath();
-      ctx.roundRect(325, 530, 250, 50, 6);
-      ctx.fill();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 17px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("NEXT STAGE \u2192", 450, 562);
-      ctx.textAlign = "left";
-    }
+    this.cardGraphics = [];
+    this.collectionPoints.forEach(cp => {
+      this._createCard(cp);
+    });
 
-    // Progress
-    ctx.fillStyle = "#8b949e";
-    ctx.font = "13px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText("Collected: " + this.collected.size + " / 3", 20, 590);
+    this.progressText = this.add.text(20, 584, "Collected: 0 / 3", {
+      fontFamily: "monospace", fontSize: "13px", color: "#8b949e",
+    });
+
+    this.nextBtnGroup = this.add.container(0, 0);
+    const nbg = this.add.graphics();
+    nbg.fillStyle(0x238636, 1);
+    nbg.fillRoundedRect(325, 530, 250, 50, 6);
+    const nbt = this.add.text(450, 555, "NEXT STAGE →", {
+      fontFamily: "monospace", fontSize: "17px", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5);
+    const nbz = this.add.zone(450, 555, 250, 50).setInteractive({ useHandCursor: true });
+    nbz.on("pointerdown", () => this._advance());
+    this.nextBtnGroup.add([nbg, nbt, nbz]);
+    this.nextBtnGroup.setVisible(false);
   }
 
-  _handleClick(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    const mx   = e.clientX - rect.left;
-    const my   = e.clientY - rect.top;
+  _createCard(cp) {
+    const { x, y } = cp.position;
+    const eligible = cp.eligible !== false;
 
-    // NEXT STAGE button
-    if (this.collected.size >= 3 && mx >= 325 && mx <= 575 && my >= 530 && my <= 580) {
-      this.advanceStage();
-      return;
+    const g = this.add.graphics();
+    g.fillStyle(eligible ? 0x1b2b1e : 0x2b1b1b, 1);
+    g.fillRect(x, y, 170, 110);
+    g.lineStyle(2, eligible ? 0x28613a : 0x6b2323, 1);
+    g.strokeRect(x, y, 170, 110);
+
+    this.add.text(x + 9, y + 10, cp.equipmentType, {
+      fontFamily: "monospace", fontSize: "12px", color: "#e6edf3", fontStyle: "bold",
+    });
+    this.add.text(x + 9, y + 30, cp.refrigerant, {
+      fontFamily: "monospace", fontSize: "12px", color: "#8b949e",
+    });
+    this.add.text(x + 9, y + 48, cp.massKg + " kg", {
+      fontFamily: "monospace", fontSize: "12px", color: "#8b949e",
+    });
+    this.add.text(x + 9, y + 64, cp.status, {
+      fontFamily: "monospace", fontSize: "11px", color: "#555d6b",
+    });
+    this.add.text(x + 9, y + 80, cp.id, {
+      fontFamily: "monospace", fontSize: "11px", color: "#555d6b",
+    });
+
+    if (!eligible) {
+      this.add.text(x + 9, y + 96, "INELIGIBLE", {
+        fontFamily: "monospace", fontSize: "10px", color: "#f85149", fontStyle: "bold",
+      });
     }
 
-    // Collection point boxes (AABB)
-    for (const cp of this.collectionPoints) {
-      const { x, y } = cp.position;
-      if (mx >= x && mx <= x + 170 && my >= y && my <= y + 110) {
-        if (!this.collected.has(cp.id)) {
-          this.onEquipmentClick(cp);
-        }
-        return;
+    cp._checkmark = this.add.text(x + 148, y + 60, "✓", {
+      fontFamily: "monospace", fontSize: "32px", color: "#3fb950", fontStyle: "bold",
+    }).setOrigin(0.5).setVisible(false);
+
+    cp._cardGfx = g;
+
+    const zone = this.add.zone(x + 85, y + 55, 170, 110).setInteractive({ useHandCursor: true });
+    zone.on("pointerdown", () => {
+      if (!this.collected.has(cp.id)) {
+        this._onEquipmentClick(cp);
       }
-    }
+    });
   }
 
-  onEquipmentClick(cp) {
+  _onEquipmentClick(cp) {
     if (cp.eligible === false) {
-      this.hud.showAlert("\u26a0\ufe0f " + cp.refrigerant + " is NOT eligible under the protocol!");
-      this.state.score.netCO2eReduction -= 50;
+      this.gs.hud.showAlert("⚠️ " + cp.refrigerant + " is NOT eligible under the protocol!");
+      this.gs.score.netCO2eReduction -= 50;
       return;
     }
 
-    this.showCollectionLogForm(cp, (formData) => {
-      const missing = this.validateCollectionLog(formData, cp);
+    this._showCollectionLogForm(cp, (formData) => {
+      const missing = this._validateCollectionLog(formData, cp);
 
       if (missing.length > 0) {
-        this.hud.showAlert("Missing: " + missing.join(", ") + ". Provenance gap \u2014 mass EXCLUDED!");
-        this.state.flags.provenanceGapPenalty = true;
-        // Still mark collected so the stage can progress
+        this.gs.hud.showAlert("Missing: " + missing.join(", ") + ". Provenance gap — mass EXCLUDED!");
+        this.gs.flags.provenanceGapPenalty = true;
         this.collected.add(cp.id);
-        this.state.containers.push({
+        this.gs.containers.push({
           fieldContainerId: "FC-" + Date.now(),
-          origin:           cp,
-          massKg:           cp.massKg,
-          refrigerant:      cp.refrigerant,
-          collectionLog:    formData,
-          provenanceOk:     false,
+          origin: cp,
+          massKg: cp.massKg,
+          refrigerant: cp.refrigerant,
+          collectionLog: formData,
+          provenanceOk: false,
         });
       } else {
-        this.state.containers.push({
+        this.gs.containers.push({
           fieldContainerId: "FC-" + Date.now(),
-          origin:           cp,
-          massKg:           cp.massKg,
-          refrigerant:      cp.refrigerant,
-          collectionLog:    formData,
-          provenanceOk:     true,
+          origin: cp,
+          massKg: cp.massKg,
+          refrigerant: cp.refrigerant,
+          collectionLog: formData,
+          provenanceOk: true,
         });
         this.collected.add(cp.id);
-        this.hud.showSuccess("\u2705 Container logged! Chain of custody established.");
+        this.gs.hud.showSuccess("✅ Container logged! Chain of custody established.");
+      }
+
+      this._markCollected(cp);
+      this.progressText.setText("Collected: " + this.collected.size + " / 3");
+      if (this.collected.size >= 3) {
+        this.nextBtnGroup.setVisible(true);
       }
     });
   }
 
-  showCollectionLogForm(cp, callback) {
-    const today       = new Date().toISOString().split("T")[0];
+  _markCollected(cp) {
+    cp._checkmark.setVisible(true);
+    cp._cardGfx.clear();
+    cp._cardGfx.fillStyle(0x172b1f, 1);
+    cp._cardGfx.fillRect(cp.position.x, cp.position.y, 170, 110);
+    cp._cardGfx.lineStyle(2, 0x3fb950, 1);
+    cp._cardGfx.strokeRect(cp.position.x, cp.position.y, 170, 110);
+  }
+
+  _showCollectionLogForm(cp, callback) {
+    const today = new Date().toISOString().split("T")[0];
     const serialField = cp.requiresSerialNumber
       ? `<label>Serial Number <span style="color:#f85149">(required >10 kg)</span>:<br>
            <input type="text" name="serialNumber" value="SN-${cp.id}" style="width:100%;box-sizing:border-box;${INPUT_CSS}">
@@ -199,7 +164,7 @@ export class CollectionStage {
         box-shadow:0 8px 32px rgba(0,0,0,0.7);
       ">
         <h3 style="margin:0 0 6px; color:#79c0ff; font-size:15px;">
-          Collection Log \u2014 ${cp.id}
+          Collection Log — ${cp.id}
         </h3>
         <p style="margin:0 0 14px; font-size:11px; color:#8b949e;">
           ${cp.equipmentType} | ${cp.refrigerant} | ${cp.massKg} kg | ${cp.status}
@@ -234,7 +199,7 @@ export class CollectionStage {
         </form>
       </div>`;
 
-    this.hud.showPanel(html);
+    this.gs.hud.showPanel(html);
 
     setTimeout(() => {
       const form = document.getElementById("collectionForm");
@@ -242,66 +207,54 @@ export class CollectionStage {
       form.addEventListener("submit", (ev) => {
         ev.preventDefault();
         const data = Object.fromEntries(new FormData(form).entries());
-        this.hud.clearOverlay();
+        this.gs.hud.clearOverlay();
         callback(data);
       });
     }, 0);
   }
 
-  validateCollectionLog(form, cp) {
+  _validateCollectionLog(form, cp) {
     const missing = [];
-    if (!form.facilityAddress)  missing.push("Facility Address");
-    if (!form.date)             missing.push("Date");
+    if (!form.facilityAddress) missing.push("Facility Address");
+    if (!form.date) missing.push("Date");
     if (!form.fieldContainerId) missing.push("Container ID");
-    if (!form.equipmentType)    missing.push("Equipment Type");
-    if (!form.approxQty)        missing.push("Approx Quantity");
-    if (!form.equipmentStatus)  missing.push("Equipment Status");
-    if (!form.attestation)      missing.push("Attestation Signature");
+    if (!form.equipmentType) missing.push("Equipment Type");
+    if (!form.approxQty) missing.push("Approx Quantity");
+    if (!form.equipmentStatus) missing.push("Equipment Status");
+    if (!form.attestation) missing.push("Attestation Signature");
     if (cp.massKg > 10 && !form.serialNumber) missing.push("Serial Number (required >10 kg)");
     return missing;
+  }
+
+  _advance() {
+    this.gs.hud.clearOverlay();
+    this.scene.start("TransitionScene", { nextKey: "AGGREGATION" });
   }
 
   generateScene() {
     this.collectionPoints = [
       {
-        id: "CP-001",
-        equipmentType: "Residential Split AC",
-        refrigerant:   "HCFC-22",
-        massKg:        2.3,
-        status:        "end-of-life",
-        position:      { x: 70, y: 155 },
+        id: "CP-001", equipmentType: "Residential Split AC", refrigerant: "HCFC-22",
+        massKg: 2.3, status: "end-of-life", position: { x: 70, y: 155 },
       },
       {
-        id: "CP-002",
-        equipmentType:       "Industrial Chiller",
-        refrigerant:         "CFC-12",
-        massKg:              45.0,
-        status:              "end-of-life",
-        position:            { x: 360, y: 240 },
+        id: "CP-002", equipmentType: "Industrial Chiller", refrigerant: "CFC-12",
+        massKg: 45.0, status: "end-of-life", position: { x: 360, y: 240 },
         requiresSerialNumber: true,
       },
       {
-        id: "CP-003",
-        equipmentType: "Car AC",
-        refrigerant:   "HFC-134a",
-        massKg:        0.7,
-        status:        "servicing",
-        position:      { x: 90, y: 370 },
+        id: "CP-003", equipmentType: "Car AC", refrigerant: "HFC-134a",
+        massKg: 0.7, status: "servicing", position: { x: 90, y: 370 },
       },
       {
-        id: "CP-004",
-        equipmentType: "CO\u2082 Heat Pump",
-        refrigerant:   "CO2-R744",
-        massKg:        3.0,
-        status:        "end-of-life",
-        position:      { x: 590, y: 185 },
-        eligible:      false,
+        id: "CP-004", equipmentType: "CO₂ Heat Pump", refrigerant: "CO2-R744",
+        massKg: 3.0, status: "end-of-life", position: { x: 590, y: 185 },
+        eligible: false,
       },
     ];
   }
 }
 
-// Shared inline CSS for form inputs
 const INPUT_CSS = `
   background:#0d1117; color:#e6edf3; border:1px solid #30363d;
   border-radius:4px; padding:5px 8px; font-family:monospace; font-size:13px;
