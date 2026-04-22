@@ -303,14 +303,14 @@ export class TransportScene extends Phaser.Scene {
         type: "pothole",
         effect: () => {
           this.truck.containerLeakPercent += 1.5;
-          this.gs.score.projectEmissions += 20;
+          this.gs.score.projectEmissions += this._leakEmissionsPenalty(1.5);
         },
       },
       {
         type: "debris",
         effect: () => {
           this.truck.containerLeakPercent += 3.0;
-          this.gs.score.projectEmissions += 50;
+          this.gs.score.projectEmissions += this._leakEmissionsPenalty(3.0);
         },
       },
       {
@@ -330,5 +330,11 @@ export class TransportScene extends Phaser.Scene {
         height: 52,
       });
     }
+  }
+
+  _leakEmissionsPenalty(leakPercent) {
+    const totalMassKg = this.gs.aggregatedContainers.reduce((s, c) => s + (c.eligibleMassKg || c.massKg), 0);
+    const leakedKg = totalMassKg * (leakPercent / 100);
+    return (leakedKg / 1000) * 1960;
   }
 }

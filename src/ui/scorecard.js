@@ -9,18 +9,8 @@ export class ScorecardScene extends Phaser.Scene {
     this.gs = this.registry.get("gameState");
     const { destroyedBatches, score, flags } = this.gs;
 
-    let baselineCO2e = 0;
-    let projectCO2e = 0;
-
-    destroyedBatches.forEach(batch => {
-      const r = REFRIGERANTS.find(r => r.id === batch.refrigerant);
-      if (!r) return;
-      baselineCO2e += (batch.massDestroyed / 1000) * r.GWP;
-      projectCO2e += batch.directCO2Emitted;
-    });
-
-    if (flags.leakagePenalty) projectCO2e *= 1.15;
-
+    const baselineCO2e = score.grossCO2eAvoided;
+    const projectCO2e = score.projectEmissions;
     const netReduction = Math.max(0, baselineCO2e - projectCO2e);
     const creditsIssued = Math.floor(netReduction);
 
@@ -29,7 +19,7 @@ export class ScorecardScene extends Phaser.Scene {
       projectCO2e: projectCO2e.toFixed(2),
       netReduction: netReduction.toFixed(2),
       creditsIssued,
-      grade: this._getGrade(creditsIssued, flags),
+      grade: this._getGrade(creditsIssued, flags, destroyedBatches),
       batches: destroyedBatches,
       flags,
       reportingPeriod: "2026",
@@ -123,24 +113,36 @@ export class ScorecardScene extends Phaser.Scene {
 
     // Penalty flags
     let flagY = 310;
+    const hasDREIssue = d.batches.some(b => b.DRE < 99.99);
     if (d.flags.provenanceGapPenalty) {
       g.fillStyle(0x2d1010, 1);
       g.fillRect(18, flagY, 480, 38);
       g.lineStyle(1, 0xf85149, 1);
       g.strokeRect(18, flagY, 480, 38);
-      this.add.text(28, flagY + 14, "⚠ Provenance Gap Detected — some containers excluded from eligible mass", {
-        fontFamily: "monospace", fontSize: "12px", color: "#f85149",
+      this.add.text(28, flagY + 14, "⚠ Provenance Gap — some containers excluded from eligible mass", {
+        fontFamily: "monospace", fontSize: "11px", color: "#f85149",
       });
-      flagY += 46;
+      flagY += 44;
     }
     if (d.flags.leakagePenalty) {
       g.fillStyle(0x2d1e08, 1);
       g.fillRect(18, flagY, 480, 38);
       g.lineStyle(1, 0xffa726, 1);
       g.strokeRect(18, flagY, 480, 38);
-      this.add.text(28, flagY + 14, "⚠ Transport Leakage Penalty Applied (+15% project emissions)", {
-        fontFamily: "monospace", fontSize: "12px", color: "#ffa726",
+      this.add.text(28, flagY + 14, "⚠ Transport Leakage >10% — eligible mass reduced", {
+        fontFamily: "monospace", fontSize: "11px", color: "#ffa726",
       });
+      flagY += 44;
+    }
+    if (hasDREIssue) {
+      g.fillStyle(0x2d1010, 1);
+      g.fillRect(18, flagY, 480, 38);
+      g.lineStyle(1, 0xf85149, 1);
+      g.strokeRect(18, flagY, 480, 38);
+      this.add.text(28, flagY + 14, "⚠ DRE below 99.99% on some batches — creditable mass reduced", {
+        fontFamily: "monospace", fontSize: "11px", color: "#f85149",
+      });
+      flagY += 44;
     }
 
     // Large credits display
@@ -172,8 +174,9 @@ export class ScorecardScene extends Phaser.Scene {
     });
   }
 
-  _getGrade(credits, flags) {
-    if (credits > 500 && !flags.provenanceGapPenalty && !flags.leakagePenalty)
+  _getGrade(credits, flags, batches) {
+    const hasDREIssue = batches.some(b => b.DRE < 99.99);
+    if (credits > 500 && !flags.provenanceGapPenalty && !flags.leakagePenalty && !hasDREIssue)
       return { grade: "A+", label: "🏆 Verified! Credits Issued." };
     if (credits > 200)
       return { grade: "B", label: "✅ Accepted with minor issues." };

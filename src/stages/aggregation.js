@@ -377,12 +377,16 @@ export class AggregationScene extends Phaser.Scene {
       return true;
     } else if (targetBin !== "MIXED" && targetBin !== container.refrigerant
       && this._getRefrigerantClass(container.refrigerant) === this._getRefrigerantClass(targetBin)) {
-      this.gs.hud.showAlert("❌ Same class but wrong refrigerant! " + container.refrigerant + " ≠ " + targetBin + ". Mixing loses credits.");
-      this.gs.score.projectEmissions += 50;
+      const r = REFRIGERANTS.find(rf => rf.id === container.refrigerant);
+      const penalty = (container.massKg / 1000) * (r ? r.GWP : 1960) * 0.1;
+      this.gs.score.projectEmissions += penalty;
+      this.gs.hud.showAlert("❌ Same class but wrong refrigerant! " + container.refrigerant + " ≠ " + targetBin + ". +" + penalty.toFixed(1) + " t penalty.");
       return false;
     } else {
-      this.gs.hud.showAlert("❌ Wrong tank! " + container.refrigerant + " does not go in " + targetBin + ".");
-      this.gs.score.projectEmissions += 50;
+      const r = REFRIGERANTS.find(rf => rf.id === container.refrigerant);
+      const penalty = (container.massKg / 1000) * (r ? r.GWP : 1960) * 0.1;
+      this.gs.score.projectEmissions += penalty;
+      this.gs.hud.showAlert("❌ Wrong tank! " + container.refrigerant + " does not go in " + targetBin + ". +" + penalty.toFixed(1) + " t penalty.");
       return false;
     }
   }
@@ -652,9 +656,10 @@ export class AggregationScene extends Phaser.Scene {
 
     const moisturePPM = good ? 60 : 500;
     const HBR = good ? 0.1 : 2.0;
+    const labPenaltyFraction = good ? 0 : 0.15;
 
     lc.containers.forEach(c => {
-      const eligibleMass = c.massKg * (1 - (moisturePPM / 1_000_000) - (HBR / 100));
+      const eligibleMass = c.massKg * (1 - labPenaltyFraction);
       const r = REFRIGERANTS.find(rf => rf.id === c.refrigerant);
       this.gs.aggregatedContainers.push({
         ...c,
@@ -664,13 +669,20 @@ export class AggregationScene extends Phaser.Scene {
       });
     });
 
+    if (!good) {
+      const r = REFRIGERANTS.find(rf => rf.id === lc.containers[0].refrigerant);
+      const gwp = r ? r.GWP : 1960;
+      const massPenalty = lc.containers.reduce((s, c) => s + c.massKg, 0) * labPenaltyFraction;
+      this.gs.score.projectEmissions += (massPenalty / 1000) * gwp;
+    }
+
     if (good) {
       this.gs.hud.showSuccess("✅ GC reading accepted! Moisture: " + moisturePPM + " ppm | HBR: " + HBR + "%");
     } else {
       const reasons = [];
       if (!cursorGood) reasons.push("cursor off-peak");
       if (!concGood) reasons.push("concentration off-target");
-      this.gs.hud.showAlert("⚠️ " + reasons.join(" + ") + ". Moisture: " + moisturePPM + " ppm | HBR: " + HBR + "% — deductions applied");
+      this.gs.hud.showAlert("⚠️ " + reasons.join(" + ") + " — 15% mass penalty applied to this tank!");
     }
 
     this.time.delayedCall(1600, () => this._nextLabSample());

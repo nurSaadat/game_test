@@ -431,7 +431,7 @@ export class DestructionScene extends Phaser.Scene {
 
     const batch = this.queue.shift();
     const refrigerant = batch[0].refrigerant;
-    this.chamber = { batch, refrigerant, weighed: false, DRE: 0 };
+    this.chamber = { batch, refrigerant, weighed: false, DRE: 0, coAlarmCount: 0, wrongDiagCount: 0 };
     this.phase = "WEIGHING";
     this._render();
 
@@ -517,6 +517,7 @@ export class DestructionScene extends Phaser.Scene {
     this.feedActive = false;
     this.phase = "DIAGNOSTIC";
     this.coAlarmTime = 0;
+    this.chamber.coAlarmCount++;
 
     const components = [
       { name: "Burner Nozzle", desc: "Fuel injection point" },
@@ -554,6 +555,7 @@ export class DestructionScene extends Phaser.Scene {
           });
         } else {
           this.coLevel += 25;
+          this.chamber.wrongDiagCount++;
           this.gs.hud.showAlert("Wrong component. CO level increased.");
         }
         this._render();
@@ -685,9 +687,16 @@ export class DestructionScene extends Phaser.Scene {
   _calculateBatchScore(ch, netMass, directCO2) {
     const r = REFRIGERANTS.find(r => r.id === ch.refrigerant);
     const gwp = r ? r.GWP : 1960;
-    const grossAvoided = (netMass / 1000) * gwp;
+
+    const dreFraction = this.currentDRE / 100;
+    const creditableMass = netMass * dreFraction;
+    const grossAvoided = (creditableMass / 1000) * gwp;
+
+    const coAlarmPenalty = ch.coAlarmCount * 0.05 * grossAvoided;
+    const diagPenalty = ch.wrongDiagCount * 0.03 * grossAvoided;
+
     this.gs.score.grossCO2eAvoided += grossAvoided;
-    this.gs.score.projectEmissions += directCO2;
+    this.gs.score.projectEmissions += directCO2 + coAlarmPenalty + diagPenalty;
     this.gs.score.netCO2eReduction = Math.max(
       0, this.gs.score.grossCO2eAvoided - this.gs.score.projectEmissions);
     this.gs.score.creditsIssued = Math.floor(this.gs.score.netCO2eReduction);
