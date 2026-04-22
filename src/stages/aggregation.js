@@ -407,9 +407,13 @@ export class AggregationScene extends Phaser.Scene {
     this.labCurrent = {
       binKey: entry.binKey,
       containers: entry.containers,
-      sliderX: 85,
+      sliderX: 65,
       targetPeakX: correctX,
       falsePeakPositions: falsePeaks,
+      targetConcentration: 30 + Math.floor(Math.random() * 50),
+      concDotValue: 0,
+      cursorStopped: false,
+      concDotStopped: false,
       confirmed: false,
     };
 
@@ -426,12 +430,13 @@ export class AggregationScene extends Phaser.Scene {
     this.add.text(20, 14, "LAB ANALYSIS — Gas Chromatography", {
       fontFamily: "monospace", fontSize: "18px", color: "#79c0ff", fontStyle: "bold",
     });
-    this.add.text(20, 40, "Tank: " + lc.binKey + "   |   Drag the red cursor to the correct peak, then CONFIRM", {
+    this.add.text(20, 40, "Tank: " + lc.binKey + "   |   Press STOP to lock the cursor, then lock the concentration dot", {
       fontFamily: "monospace", fontSize: "13px", color: "#8b949e",
     });
 
     const g = this.gfx;
 
+    // GC chart area
     g.fillStyle(0x161b22, 1);
     g.fillRect(40, 75, 560, 305);
     g.lineStyle(1, 0x30363d, 1);
@@ -444,18 +449,22 @@ export class AggregationScene extends Phaser.Scene {
       fontFamily: "monospace", fontSize: "11px", color: "#555555",
     }).setOrigin(0.5);
 
+    // False peaks
     for (const px of lc.falsePeakPositions) {
       g.fillStyle(0x383838, 1);
       g.fillTriangle(px, baseY, px + 11, baseY - 52, px + 22, baseY);
     }
 
+    // Target peak
     const tp = lc.targetPeakX;
     g.fillStyle(0xffa726, 1);
     g.fillTriangle(tp, baseY, tp + 13, baseY - 92, tp + 26, baseY);
 
+    // Green target zone (subtle)
     g.fillStyle(0x3fb950, 0.12);
     g.fillRect(tp - 8, 85, 50, 275);
 
+    // ── Concentration meter (right panel) ──
     g.fillStyle(0x161b22, 1);
     g.fillRect(620, 75, 258, 305);
     g.lineStyle(1, 0x30363d, 1);
@@ -473,34 +482,118 @@ export class AggregationScene extends Phaser.Scene {
       });
     });
 
-    this.sliderLine = this.add.graphics();
-    this.sliderHandle = this.add.circle(lc.sliderX, 90, 9, 0xf85149).setInteractive({ useHandCursor: true, draggable: true });
-    this.input.setDraggable(this.sliderHandle);
+    // Concentration gauge bar (vertical bar on right panel)
+    const gaugeX = 820, gaugeY = 100, gaugeW = 30, gaugeH = 240;
+    g.fillStyle(0x0d1117, 1);
+    g.fillRect(gaugeX, gaugeY, gaugeW, gaugeH);
+    g.lineStyle(1, 0x30363d, 1);
+    g.strokeRect(gaugeX, gaugeY, gaugeW, gaugeH);
 
+    // Green target zone on gauge
+    const targetConc = lc.targetConcentration;
+    const targetFrac = targetConc / 100;
+    const greenH = gaugeH * 0.15;
+    const greenY = gaugeY + gaugeH - targetFrac * gaugeH - greenH / 2;
+    g.fillStyle(0x3fb950, 0.2);
+    g.fillRect(gaugeX, greenY, gaugeW, greenH);
+
+    // Gauge labels
+    this.add.text(gaugeX + gaugeW / 2, gaugeY - 8, "CONC", {
+      fontFamily: "monospace", fontSize: "8px", color: "#8b949e",
+    }).setOrigin(0.5);
+    this.add.text(gaugeX + gaugeW + 4, gaugeY, "100", {
+      fontFamily: "monospace", fontSize: "7px", color: "#555555",
+    });
+    this.add.text(gaugeX + gaugeW + 4, gaugeY + gaugeH - 6, "0", {
+      fontFamily: "monospace", fontSize: "7px", color: "#555555",
+    });
+
+    // Store gauge metrics for update loop
+    lc.gaugeX = gaugeX;
+    lc.gaugeY = gaugeY;
+    lc.gaugeW = gaugeW;
+    lc.gaugeH = gaugeH;
+
+    // ── Auto-moving cursor (red vertical line) ──
+    this.sliderLine = this.add.graphics();
+    this.sliderHandle = this.add.circle(lc.sliderX, 83, 7, 0xf85149);
     this._drawSliderLine(lc.sliderX);
 
-    this.input.on("drag", (pointer, obj, dragX) => {
-      if (obj === this.sliderHandle) {
-        const nx = Phaser.Math.Clamp(dragX, 65, 570);
-        obj.x = nx;
-        lc.sliderX = nx;
-        this._drawSliderLine(nx);
-      }
+    // ── Auto-moving concentration dot ──
+    this.concDotGfx = this.add.graphics();
+    this.concDotY = gaugeY + gaugeH - (lc.concDotValue / 100) * gaugeH;
+    this._drawConcDot();
+
+    // ── Status labels ──
+    this.cursorStatusText = this.add.text(60, 385, "▶ Cursor moving…", {
+      fontFamily: "monospace", fontSize: "11px", color: "#f85149",
+    });
+    this.concStatusText = this.add.text(620, 355, "", {
+      fontFamily: "monospace", fontSize: "11px", color: "#8b949e",
     });
 
-    const confirmBg = this.add.graphics();
-    confirmBg.fillStyle(0x238636, 1);
-    confirmBg.fillRoundedRect(290, 415, 210, 46, 6);
-    this.add.text(395, 438, "CONFIRM READING", {
+    // ── STOP button ──
+    this.stopBtnBg = this.add.graphics();
+    this.stopBtnBg.fillStyle(0xf85149, 1);
+    this.stopBtnBg.fillRoundedRect(290, 415, 210, 46, 6);
+    this.stopBtnText = this.add.text(395, 438, "⏹  STOP CURSOR", {
       fontFamily: "monospace", fontSize: "15px", color: "#ffffff", fontStyle: "bold",
     }).setOrigin(0.5);
-    const confirmZone = this.add.zone(395, 438, 210, 46).setInteractive({ useHandCursor: true });
-    confirmZone.on("pointerdown", () => {
-      if (!lc.confirmed) {
-        lc.confirmed = true;
-        this._evaluateLabResult();
-      }
-    });
+    const stopZone = this.add.zone(395, 438, 210, 46).setInteractive({ useHandCursor: true });
+    stopZone.on("pointerdown", () => this._onStopPress());
+  }
+
+  _onStopPress() {
+    const lc = this.labCurrent;
+    if (lc.confirmed) return;
+
+    if (!lc.cursorStopped) {
+      // First press: stop the cursor
+      lc.cursorStopped = true;
+      this.cursorStatusText.setText("■ Cursor locked at " + Math.round(lc.sliderX));
+      this.cursorStatusText.setColor("#3fb950");
+      this.concStatusText.setText("▶ Concentration dot moving…");
+      this.concStatusText.setColor("#f85149");
+      this.stopBtnBg.clear();
+      this.stopBtnBg.fillStyle(0xf85149, 1);
+      this.stopBtnBg.fillRoundedRect(290, 415, 210, 46, 6);
+      this.stopBtnText.setText("⏹  STOP DOT");
+    } else if (!lc.concDotStopped) {
+      // Second press: stop the concentration dot and evaluate
+      lc.concDotStopped = true;
+      lc.confirmed = true;
+      this.concStatusText.setText("■ Concentration locked");
+      this.concStatusText.setColor("#3fb950");
+      this.stopBtnBg.clear();
+      this.stopBtnBg.fillStyle(0x333333, 1);
+      this.stopBtnBg.fillRoundedRect(290, 415, 210, 46, 6);
+      this.stopBtnText.setText("EVALUATING…");
+      this.time.delayedCall(500, () => this._evaluateLabResult());
+    }
+  }
+
+  update(time, delta) {
+    if (this.phase !== "LAB" || !this.labCurrent) return;
+    const lc = this.labCurrent;
+    if (lc.confirmed) return;
+
+    const speed = 2; // pixels per frame tick (~120 px/s at 60fps) — use delta for consistency
+    const pxPerMs = 0.12;
+
+    // Auto-move cursor
+    if (!lc.cursorStopped) {
+      lc.sliderX += pxPerMs * delta;
+      if (lc.sliderX > 570) lc.sliderX = 65;
+      this.sliderHandle.x = lc.sliderX;
+      this._drawSliderLine(lc.sliderX);
+    }
+
+    // Auto-move concentration dot (after cursor is stopped)
+    if (lc.cursorStopped && !lc.concDotStopped) {
+      lc.concDotValue += pxPerMs * delta * 0.4;
+      if (lc.concDotValue > 100) lc.concDotValue = 0;
+      this._drawConcDot();
+    }
   }
 
   _drawSliderLine(x) {
@@ -509,10 +602,31 @@ export class AggregationScene extends Phaser.Scene {
     this.sliderLine.lineBetween(x, 85, x, 350);
   }
 
+  _drawConcDot() {
+    const lc = this.labCurrent;
+    const dotY = lc.gaugeY + lc.gaugeH - (lc.concDotValue / 100) * lc.gaugeH;
+    this.concDotGfx.clear();
+    this.concDotGfx.fillStyle(0xf85149, 1);
+    this.concDotGfx.fillCircle(lc.gaugeX + lc.gaugeW / 2, dotY, 6);
+    this.concDotGfx.lineStyle(1, 0xffffff, 0.4);
+    this.concDotGfx.strokeCircle(lc.gaugeX + lc.gaugeW / 2, dotY, 6);
+    // Horizontal indicator line
+    this.concDotGfx.lineStyle(1, 0xf85149, 0.4);
+    this.concDotGfx.lineBetween(lc.gaugeX - 10, dotY, lc.gaugeX, dotY);
+  }
+
   _evaluateLabResult() {
     const lc = this.labCurrent;
-    const dist = Math.abs(lc.sliderX - (lc.targetPeakX + 13));
-    const good = dist <= 28;
+
+    // Cursor accuracy: distance from slider to peak center
+    const cursorDist = Math.abs(lc.sliderX - (lc.targetPeakX + 13));
+    const cursorGood = cursorDist <= 28;
+
+    // Concentration accuracy: distance from dot value to target concentration
+    const concDist = Math.abs(lc.concDotValue - lc.targetConcentration);
+    const concGood = concDist <= 8;
+
+    const good = cursorGood && concGood;
 
     const moisturePPM = good ? 60 : 500;
     const HBR = good ? 0.1 : 2.0;
@@ -531,7 +645,10 @@ export class AggregationScene extends Phaser.Scene {
     if (good) {
       this.gs.hud.showSuccess("✅ GC reading accepted! Moisture: " + moisturePPM + " ppm | HBR: " + HBR + "%");
     } else {
-      this.gs.hud.showAlert("⚠️ Off-target reading. Moisture: " + moisturePPM + " ppm | HBR: " + HBR + "% — deductions applied");
+      const reasons = [];
+      if (!cursorGood) reasons.push("cursor off-peak");
+      if (!concGood) reasons.push("concentration off-target");
+      this.gs.hud.showAlert("⚠️ " + reasons.join(" + ") + ". Moisture: " + moisturePPM + " ppm | HBR: " + HBR + "% — deductions applied");
     }
 
     this.time.delayedCall(1600, () => this._nextLabSample());
