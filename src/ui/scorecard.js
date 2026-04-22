@@ -114,6 +114,26 @@ export class ScorecardScene extends Phaser.Scene {
     // Penalty flags
     let flagY = 310;
     const hasDREIssue = d.batches.some(b => b.DRE < 99.99);
+    if (d.flags.sortingPenalty) {
+      g.fillStyle(0x2d1e08, 1);
+      g.fillRect(18, flagY, 480, 38);
+      g.lineStyle(1, 0xffa726, 1);
+      g.strokeRect(18, flagY, 480, 38);
+      this.add.text(28, flagY + 14, "⚠ Sorting errors — wrong tank drops increased project emissions", {
+        fontFamily: "monospace", fontSize: "11px", color: "#ffa726",
+      });
+      flagY += 44;
+    }
+    if (d.flags.labAccuracyPenalty) {
+      g.fillStyle(0x2d1e08, 1);
+      g.fillRect(18, flagY, 480, 38);
+      g.lineStyle(1, 0xffa726, 1);
+      g.strokeRect(18, flagY, 480, 38);
+      this.add.text(28, flagY + 14, "⚠ Lab inaccuracy — 15% mass penalty on affected tanks", {
+        fontFamily: "monospace", fontSize: "11px", color: "#ffa726",
+      });
+      flagY += 44;
+    }
     if (d.flags.provenanceGapPenalty) {
       g.fillStyle(0x2d1010, 1);
       g.fillRect(18, flagY, 480, 38);
@@ -176,7 +196,8 @@ export class ScorecardScene extends Phaser.Scene {
 
   _getGrade(credits, flags, batches) {
     const hasDREIssue = batches.some(b => b.DRE < 99.99);
-    if (credits > 500 && !flags.provenanceGapPenalty && !flags.leakagePenalty && !hasDREIssue)
+    const hasAnyPenalty = flags.provenanceGapPenalty || flags.labAccuracyPenalty || flags.sortingPenalty || flags.leakagePenalty || hasDREIssue;
+    if (credits > 500 && !hasAnyPenalty)
       return { grade: "A+", label: "🏆 Verified! Credits Issued." };
     if (credits > 200)
       return { grade: "B", label: "✅ Accepted with minor issues." };

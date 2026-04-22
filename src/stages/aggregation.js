@@ -377,12 +377,14 @@ export class AggregationScene extends Phaser.Scene {
       return true;
     } else if (targetBin !== "MIXED" && targetBin !== container.refrigerant
       && this._getRefrigerantClass(container.refrigerant) === this._getRefrigerantClass(targetBin)) {
+      this.gs.flags.sortingPenalty = true;
       const r = REFRIGERANTS.find(rf => rf.id === container.refrigerant);
       const penalty = (container.massKg / 1000) * (r ? r.GWP : 1960) * 0.1;
       this.gs.score.projectEmissions += penalty;
       this.gs.hud.showAlert("❌ Same class but wrong refrigerant! " + container.refrigerant + " ≠ " + targetBin + ". +" + penalty.toFixed(1) + " t penalty.");
       return false;
     } else {
+      this.gs.flags.sortingPenalty = true;
       const r = REFRIGERANTS.find(rf => rf.id === container.refrigerant);
       const penalty = (container.massKg / 1000) * (r ? r.GWP : 1960) * 0.1;
       this.gs.score.projectEmissions += penalty;
@@ -670,6 +672,7 @@ export class AggregationScene extends Phaser.Scene {
     });
 
     if (!good) {
+      this.gs.flags.labAccuracyPenalty = true;
       const r = REFRIGERANTS.find(rf => rf.id === lc.containers[0].refrigerant);
       const gwp = r ? r.GWP : 1960;
       const massPenalty = lc.containers.reduce((s, c) => s + c.massKg, 0) * labPenaltyFraction;

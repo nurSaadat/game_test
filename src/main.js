@@ -22,6 +22,8 @@ const gameState = {
   },
   flags: {
     provenanceGapPenalty: false,
+    labAccuracyPenalty: false,
+    sortingPenalty: false,
     leakagePenalty: false,
   },
   hud,

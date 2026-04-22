@@ -17,8 +17,10 @@ export class TransitionScene extends Phaser.Scene {
     const totalMass = gs.aggregatedContainers
       .reduce((s, c) => s + (c.eligibleMassKg || c.massKg), 0);
     const penalties = [];
+    if (gs.flags.sortingPenalty) penalties.push("Sorting Errors");
+    if (gs.flags.labAccuracyPenalty) penalties.push("Lab Inaccuracy");
     if (gs.flags.provenanceGapPenalty) penalties.push("Provenance Gap");
-    if (gs.flags.leakagePenalty) penalties.push("Leakage Penalty");
+    if (gs.flags.leakagePenalty) penalties.push("Leakage >10%");
 
     this.cameras.main.setBackgroundColor("rgba(0,0,0,0.88)");
 
