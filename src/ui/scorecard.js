@@ -209,7 +209,7 @@ export class ScorecardScene extends Phaser.Scene {
     const hasAnyPenalty = flags.provenanceGapPenalty || flags.labAccuracyPenalty || flags.sortingPenalty || flags.leakagePenalty || flags.coAlarmPenalty || hasDREIssue;
     if (credits > 500 && !hasAnyPenalty)
       return { grade: "A+", label: "🏆 Verified! Credits Issued." };
-    if (credits > 200)
+    if (credits > 300)
       return { grade: "B", label: "✅ Accepted with minor issues." };
     return { grade: "C", label: "⚠️ Needs improvement." };
   }
