@@ -14,7 +14,12 @@ export class DestructionScene extends Phaser.Scene {
     this.DRE_TARGET = 99.99;
     this.MIN_DWELL_SEC = 20;
 
-    this.queue = [...this.gs.transportedContainers];
+    const grouped = {};
+    this.gs.transportedContainers.forEach(c => {
+      if (!grouped[c.refrigerant]) grouped[c.refrigerant] = [];
+      grouped[c.refrigerant].push(c);
+    });
+    this.queue = Object.values(grouped);
     this.chamber = null;
 
     this.chamberTemp = 900;
@@ -43,7 +48,7 @@ export class DestructionScene extends Phaser.Scene {
       right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
     });
 
-    this._processNextContainer();
+    this._processNextBatch();
   }
 
   update(time, delta) {
@@ -86,7 +91,7 @@ export class DestructionScene extends Phaser.Scene {
     }
 
     if (this.dwellTimer >= this.MIN_DWELL_SEC && this.currentDRE >= this.DRE_TARGET) {
-      this._completeBatch(this.chamber.container);
+      this._completeBatch();
     }
   }
 
@@ -117,8 +122,6 @@ export class DestructionScene extends Phaser.Scene {
 
   _renderChamber() {
     const g = this.gfx;
-    const container = this.chamber?.container;
-
     g.fillStyle(0x080c10, 1);
     g.fillRect(0, 0, 900, 600);
 
@@ -132,9 +135,11 @@ export class DestructionScene extends Phaser.Scene {
       fontFamily: "monospace", fontSize: "14px", color: "#79c0ff", fontStyle: "bold",
     });
 
-    if (container) {
-      const mass = (container.confirmedMassKg || container.eligibleMassKg || container.massKg).toFixed(2);
-      this.add.text(370, 8, container.refrigerant + "  |  " + mass + " kg  |  " + container.fieldContainerId, {
+    if (this.chamber) {
+      const ch = this.chamber;
+      const totalMass = (ch.confirmedTotalMass || ch.batch.reduce((s, c) => s + (c.eligibleMassKg || c.massKg), 0)).toFixed(2);
+      const ids = ch.batch.map(c => c.fieldContainerId).join(", ");
+      this.add.text(370, 8, ch.refrigerant + "  |  " + totalMass + " kg  |  " + ch.batch.length + " containers", {
         fontFamily: "monospace", fontSize: "12px", color: "#8b949e",
       });
       this.add.text(370, 24, "Required zone: " + this.TEMP_MIN + "–" + this.TEMP_MAX + "°C", {
@@ -418,18 +423,19 @@ export class DestructionScene extends Phaser.Scene {
     });
   }
 
-  _processNextContainer() {
+  _processNextBatch() {
     if (this.queue.length === 0) {
       this._completeStage();
       return;
     }
 
-    const container = this.queue.shift();
-    this.chamber = { container, weighed: false, DRE: 0 };
+    const batch = this.queue.shift();
+    const refrigerant = batch[0].refrigerant;
+    this.chamber = { batch, refrigerant, weighed: false, DRE: 0 };
     this.phase = "WEIGHING";
 
-    this._showWeighingDialog(container, (weight) => {
-      container.confirmedMassKg = weight;
+    this._showBatchWeighingDialog(batch, (totalMass) => {
+      this.chamber.confirmedTotalMass = totalMass;
       this.chamber.weighed = true;
       this.dwellTimer = 0;
       this.coAlarmTime = 0;
@@ -444,7 +450,7 @@ export class DestructionScene extends Phaser.Scene {
       this.tempDriftTarget = 0;
       this.tempDriftTimer = 0;
 
-      const r = REFRIGERANTS.find(r => r.id === container.refrigerant);
+      const r = REFRIGERANTS.find(r => r.id === refrigerant);
       if (r && r.destroyTemp) {
         this.TEMP_MIN = r.destroyTemp.min;
         this.TEMP_MAX = r.destroyTemp.max;
@@ -555,49 +561,59 @@ export class DestructionScene extends Phaser.Scene {
     });
   }
 
-  _completeBatch(container) {
+  _completeBatch() {
     if (this.phase !== "RUNNING") return;
     this.feedActive = false;
     this.phase = "EMPTY_WEIGH";
 
-    const confirmedMass = container.confirmedMassKg || container.eligibleMassKg || container.massKg;
-    const directCO2 = confirmedMass * this._getCarbonContent(container.refrigerant);
+    const ch = this.chamber;
+    const confirmedMass = ch.confirmedTotalMass;
+    const directCO2 = confirmedMass * this._getCarbonContent(ch.refrigerant);
 
-    this._showEmptyWeighDialog(container, (emptyWeight) => {
+    this._showBatchEmptyWeighDialog(ch, (emptyWeight) => {
       const netMass = Math.max(0, confirmedMass - emptyWeight);
+      const batchTotal = ch.batch.reduce((s, c) => s + (c.eligibleMassKg || c.massKg), 0);
 
-      this.gs.destroyedBatches.push({
-        containerId: container.fieldContainerId,
-        refrigerant: container.refrigerant,
-        massDestroyed: netMass,
-        DRE: this.currentDRE,
-        directCO2Emitted: directCO2,
-        destructionTime: new Date().toISOString(),
-        attestationSigned: true,
+      ch.batch.forEach(c => {
+        const fraction = (c.eligibleMassKg || c.massKg) / batchTotal;
+        this.gs.destroyedBatches.push({
+          containerId: c.fieldContainerId,
+          refrigerant: ch.refrigerant,
+          massDestroyed: netMass * fraction,
+          DRE: this.currentDRE,
+          directCO2Emitted: directCO2 * fraction,
+          destructionTime: new Date().toISOString(),
+          attestationSigned: true,
+        });
       });
 
-      this._calculateAndApplyScore(container, netMass, directCO2);
-      this.gs.hud.showSuccess("✅ Batch complete! DRE: " + this.currentDRE.toFixed(4) + "%  |  " + netMass.toFixed(2) + " kg destroyed");
-      this.time.delayedCall(1600, () => this._processNextContainer());
+      this._calculateBatchScore(ch, netMass, directCO2);
+      this.gs.hud.showSuccess("✅ Batch complete! " + ch.batch.length + " containers | DRE: " + this.currentDRE.toFixed(4) + "% | " + netMass.toFixed(2) + " kg");
+      this.time.delayedCall(1600, () => this._processNextBatch());
     });
   }
 
-  _showWeighingDialog(container, callback) {
-    const mass = (container.eligibleMassKg || container.massKg).toFixed(2);
+  _showBatchWeighingDialog(batch, callback) {
+    const refrigerant = batch[0].refrigerant;
+    const totalMass = batch.reduce((s, c) => s + (c.eligibleMassKg || c.massKg), 0).toFixed(2);
+    const containerList = batch.map(c =>
+      '<div style="font-size:11px; color:#c8d1da; margin:2px 0;">' + c.fieldContainerId + ' — ' + (c.eligibleMassKg || c.massKg).toFixed(2) + ' kg</div>'
+    ).join("");
     const html = `
       <div style="
         position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
         background:#161b22; border:2px solid #30363d; border-radius:8px;
-        padding:24px; width:380px; color:#e6edf3; font-family:monospace;
+        padding:24px; width:420px; color:#e6edf3; font-family:monospace;
         z-index:200; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.7);
       ">
         <h3 style="color:#79c0ff; margin:0 0 10px;">⚖️ PRE-DESTRUCTION WEIGHING</h3>
-        <p style="font-size:11px; color:#8b949e; margin:0 0 14px;">
-          Protocol §8.1.5: Container weighed ≤2 days before destruction.
+        <p style="font-size:11px; color:#8b949e; margin:0 0 10px;">
+          Protocol §8.1.5: Batch weighed ≤2 days before destruction.
         </p>
-        <p style="font-size:13px; margin:0 0 10px;">${container.refrigerant} | ${container.fieldContainerId}</p>
-        <label style="font-size:13px;">Confirmed Mass (kg):<br>
-          <input id="weighInput" type="number" value="${mass}" step="0.01" style="
+        <p style="font-size:14px; color:#ffa726; margin:0 0 8px; font-weight:bold;">${refrigerant} — ${batch.length} container(s)</p>
+        <div style="text-align:left; margin:0 auto 12px; max-width:280px;">${containerList}</div>
+        <label style="font-size:13px;">Confirmed Total Mass (kg):<br>
+          <input id="weighInput" type="number" value="${totalMass}" step="0.01" style="
             margin-top:8px; width:160px; padding:6px; font-family:monospace;
             font-size:16px; text-align:center; background:#0d1117;
             color:#e6edf3; border:1px solid #30363d; border-radius:4px;">
@@ -606,7 +622,7 @@ export class DestructionScene extends Phaser.Scene {
           margin-top:16px; background:#238636; color:#fff; border:none;
           border-radius:4px; padding:10px 24px; font-family:monospace;
           font-size:14px; cursor:pointer;
-        ">Confirm Weight</button>
+        ">Confirm Batch Weight</button>
       </div>`;
 
     this.gs.hud.showPanel(html);
@@ -614,29 +630,32 @@ export class DestructionScene extends Phaser.Scene {
       const btn = document.getElementById("confirmWeigh");
       if (!btn) return;
       btn.addEventListener("click", () => {
-        const w = parseFloat(document.getElementById("weighInput").value) || parseFloat(mass);
+        const w = parseFloat(document.getElementById("weighInput").value) || parseFloat(totalMass);
         this.gs.hud.clearOverlay();
         callback(w);
       });
     }, 0);
   }
 
-  _showEmptyWeighDialog(container, callback) {
-    const confirmedMass = container.confirmedMassKg || container.eligibleMassKg || container.massKg;
-    const emptyDefault = (confirmedMass * 0.05).toFixed(2);
+  _showBatchEmptyWeighDialog(ch, callback) {
+    const emptyDefault = (ch.confirmedTotalMass * 0.05).toFixed(2);
+    const containerList = ch.batch.map(c =>
+      '<div style="font-size:11px; color:#c8d1da; margin:2px 0;">' + c.fieldContainerId + '</div>'
+    ).join("");
     const html = `
       <div style="
         position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
         background:#161b22; border:2px solid #30363d; border-radius:8px;
-        padding:24px; width:380px; color:#e6edf3; font-family:monospace;
+        padding:24px; width:420px; color:#e6edf3; font-family:monospace;
         z-index:200; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.7);
       ">
         <h3 style="color:#3fb950; margin:0 0 10px;">✅ DESTRUCTION COMPLETE</h3>
-        <p style="font-size:11px; color:#8b949e; margin:0 0 14px;">
-          Protocol §8.1.5: Weigh empty container ≤2 days after destruction.
+        <p style="font-size:11px; color:#8b949e; margin:0 0 10px;">
+          Protocol §8.1.5: Weigh empty containers ≤2 days after destruction.
         </p>
-        <p style="font-size:13px; margin:0 0 10px;">${container.refrigerant} | ${container.fieldContainerId}</p>
-        <label style="font-size:13px;">Empty Container Mass (kg):<br>
+        <p style="font-size:14px; color:#ffa726; margin:0 0 8px; font-weight:bold;">${ch.refrigerant} — ${ch.batch.length} container(s)</p>
+        <div style="text-align:left; margin:0 auto 12px; max-width:280px;">${containerList}</div>
+        <label style="font-size:13px;">Total Empty Container Mass (kg):<br>
           <input id="emptyWeighInput" type="number" value="${emptyDefault}" step="0.01" style="
             margin-top:8px; width:160px; padding:6px; font-family:monospace;
             font-size:16px; text-align:center; background:#0d1117;
@@ -661,8 +680,8 @@ export class DestructionScene extends Phaser.Scene {
     }, 0);
   }
 
-  _calculateAndApplyScore(container, netMass, directCO2) {
-    const r = REFRIGERANTS.find(r => r.id === container.refrigerant);
+  _calculateBatchScore(ch, netMass, directCO2) {
+    const r = REFRIGERANTS.find(r => r.id === ch.refrigerant);
     const gwp = r ? r.GWP : 1960;
     const grossAvoided = (netMass / 1000) * gwp;
     this.gs.score.grossCO2eAvoided += grossAvoided;
