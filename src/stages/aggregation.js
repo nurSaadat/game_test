@@ -19,6 +19,18 @@ export class AggregationScene extends Phaser.Scene {
       MIXED: { x: 520, y: 436, w: 170, h: 112, colour: 0xCE93D8, colourStr: "#CE93D8" },
     };
 
+    // Pre-compute expected container count per tank
+    for (const key of Object.keys(this.binDefs)) {
+      const bin = this.binDefs[key];
+      if (key === "MIXED") {
+        bin._expectedCount = 0;
+      } else {
+        bin._expectedCount = this.gs.containers
+          .filter(c => this._getRefrigerantClass(c.refrigerant) === key).length;
+      }
+      bin._filledCount = 0;
+    }
+
     this.gfx = this.add.graphics();
     this.draggables = [];
     this.binZones = {};
@@ -61,12 +73,13 @@ export class AggregationScene extends Phaser.Scene {
     for (const [key, bin] of Object.entries(this.binDefs)) {
       this._drawTank(bin, key);
 
-      bin._countText = this.add.text(bin.x + bin.w / 2, bin.y + bin.h * 0.2 + 36, "", {
-        fontFamily: "monospace", fontSize: "11px", color: "#8b949e",
+      const { bodyTop } = this._getTankMetrics(bin);
+      bin._countText = this.add.text(bin.x + bin.w / 2, bodyTop + 34, "", {
+        fontFamily: "monospace", fontSize: "10px", color: "#8b949e",
       }).setOrigin(0.5).setDepth(3);
 
-      bin._kgText = this.add.text(bin.x + bin.w / 2, bin.y + bin.h * 0.2 + 52, "", {
-        fontFamily: "monospace", fontSize: "11px", color: "#8b949e",
+      bin._kgText = this.add.text(bin.x + bin.w / 2, bodyTop + 47, "", {
+        fontFamily: "monospace", fontSize: "10px", color: "#8b949e",
       }).setOrigin(0.5).setDepth(3);
 
       const zone = this.add.zone(bin.x + bin.w / 2, bin.y + bin.h / 2, bin.w, bin.h);
@@ -187,77 +200,140 @@ export class AggregationScene extends Phaser.Scene {
 
   // ═══════════════════════ TANK (drop target bin) ═══════════════════════
 
+  _getTankMetrics(bin) {
+    const domeH = bin.h * 0.2;
+    const bodyTop = bin.y + domeH;
+    const bodyH = bin.h * 0.72;
+    const bodyX = bin.x + 10;
+    const bodyW = bin.w - 20;
+    return { domeH, bodyTop, bodyH, bodyX, bodyW };
+  }
+
   _drawTank(bin, key) {
     const { x, y, w, h, colour, colourStr } = bin;
-    const g = this.add.graphics().setDepth(2);
+    const { domeH, bodyTop, bodyH, bodyX, bodyW } = this._getTankMetrics(bin);
+    const n = bin._expectedCount;
+
+    // Layer 1: tank background (body fill + dome fill)
+    const bg = this.add.graphics().setDepth(1);
 
     // Shadow
-    g.fillStyle(0x000000, 0.2);
-    g.fillEllipse(x + w / 2, y + h - 2, w * 0.85, 10);
+    bg.fillStyle(0x000000, 0.2);
+    bg.fillEllipse(x + w / 2, y + h - 2, w * 0.85, 10);
 
-    const domeH = h * 0.2;
-    const bodyTop = y + domeH;
-    const bodyH = h * 0.72;
-    const bodyX = x + 10;
-    const bodyW = w - 20;
+    // Main cylinder body background
+    bg.fillStyle(0x141a24, 1);
+    bg.fillRoundedRect(bodyX, bodyTop, bodyW, bodyH, 4);
 
-    // Main cylinder body
-    g.fillStyle(0x141a24, 1);
-    g.fillRoundedRect(bodyX, bodyTop, bodyW, bodyH, 4);
-    g.lineStyle(2, colour, 0.7);
-    g.strokeRoundedRect(bodyX, bodyTop, bodyW, bodyH, 4);
+    // Dome top background
+    bg.fillStyle(0x141a24, 1);
+    bg.fillEllipse(x + w / 2, bodyTop + 2, bodyW, domeH);
 
-    // Inner colour tint
-    g.fillStyle(colour, 0.08);
-    g.fillRoundedRect(bodyX + 2, bodyTop + 2, bodyW - 4, bodyH - 4, 3);
+    // Base plate + feet
+    bg.fillStyle(0x333333, 1);
+    bg.fillRect(x + 6, bodyTop + bodyH - 2, w - 12, 6);
+    bg.fillStyle(0x444444, 1);
+    bg.fillRect(x + 14, y + h - 8, 10, 8);
+    bg.fillRect(x + w - 24, y + h - 8, 10, 8);
 
-    // Dome top (ellipse)
-    g.fillStyle(0x141a24, 1);
-    g.fillEllipse(x + w / 2, bodyTop + 2, bodyW, domeH);
-    g.lineStyle(2, colour, 0.7);
-    g.strokeEllipse(x + w / 2, bodyTop + 2, bodyW, domeH);
-    g.fillStyle(colour, 0.06);
-    g.fillEllipse(x + w / 2, bodyTop + 2, bodyW - 4, domeH - 2);
+    // Layer 2: liquid fill (drawn on top of background, below frame)
+    bin._fillGfx = this.add.graphics().setDepth(2);
+
+    // Layer 3: tank frame (outlines, details, dome stroke — all non-filled)
+    const fr = this.add.graphics().setDepth(3);
+
+    // Body outline
+    fr.lineStyle(2, colour, 0.7);
+    fr.strokeRoundedRect(bodyX, bodyTop, bodyW, bodyH, 4);
+
+    // Dome outline + tint
+    fr.lineStyle(2, colour, 0.7);
+    fr.strokeEllipse(x + w / 2, bodyTop + 2, bodyW, domeH);
+    fr.fillStyle(colour, 0.06);
+    fr.fillEllipse(x + w / 2, bodyTop + 2, bodyW - 4, domeH - 2);
+
+    // Segment divider lines inside body
+    if (n > 1) {
+      fr.lineStyle(1, colour, 0.2);
+      for (let s = 1; s < n; s++) {
+        const sy = bodyTop + bodyH - (s / n) * bodyH;
+        fr.lineBetween(bodyX + 4, sy, bodyX + bodyW - 4, sy);
+      }
+    }
+
+    // Segment count markers on right side
+    if (n > 0) {
+      for (let s = 0; s < n; s++) {
+        const segY = bodyTop + bodyH - ((s + 0.5) / n) * bodyH;
+        this.add.text(bodyX + bodyW + 6, segY, String(s + 1), {
+          fontFamily: "monospace", fontSize: "8px", color: colourStr,
+        }).setOrigin(0, 0.5).setDepth(4).setAlpha(0.35);
+      }
+    }
 
     // Valve neck on top
-    g.fillStyle(0x555555, 1);
-    g.fillRoundedRect(x + w / 2 - 7, y + 2, 14, domeH * 0.7, 2);
-    // Valve wheel
-    g.lineStyle(2, 0x888888, 1);
-    g.strokeCircle(x + w / 2, y + 4, 5);
-    g.fillStyle(0x666666, 1);
-    g.fillCircle(x + w / 2, y + 4, 2);
+    fr.fillStyle(0x555555, 1);
+    fr.fillRoundedRect(x + w / 2 - 7, y + 2, 14, domeH * 0.7, 2);
+    fr.lineStyle(2, 0x888888, 1);
+    fr.strokeCircle(x + w / 2, y + 4, 5);
+    fr.fillStyle(0x666666, 1);
+    fr.fillCircle(x + w / 2, y + 4, 2);
 
-    // Vertical rivet lines (industrial detail)
-    g.lineStyle(1, colour, 0.12);
-    g.lineBetween(bodyX + bodyW * 0.3, bodyTop + 8, bodyX + bodyW * 0.3, bodyTop + bodyH - 6);
-    g.lineBetween(bodyX + bodyW * 0.7, bodyTop + 8, bodyX + bodyW * 0.7, bodyTop + bodyH - 6);
-
-    // Reinforcement band
-    g.fillStyle(colour, 0.1);
-    g.fillRect(bodyX + 2, bodyTop + bodyH * 0.5, bodyW - 4, 3);
-
-    // Base plate
-    g.fillStyle(0x333333, 1);
-    g.fillRect(x + 6, bodyTop + bodyH - 2, w - 12, 6);
-
-    // Feet
-    g.fillStyle(0x444444, 1);
-    g.fillRect(x + 14, y + h - 8, 10, 8);
-    g.fillRect(x + w - 24, y + h - 8, 10, 8);
+    // Vertical rivet lines
+    fr.lineStyle(1, colour, 0.12);
+    fr.lineBetween(bodyX + bodyW * 0.3, bodyTop + 8, bodyX + bodyW * 0.3, bodyTop + bodyH - 6);
+    fr.lineBetween(bodyX + bodyW * 0.7, bodyTop + 8, bodyX + bodyW * 0.7, bodyTop + bodyH - 6);
 
     // Pressure gauge (side)
-    g.fillStyle(0x1a2332, 1);
-    g.fillCircle(bodyX + bodyW - 6, bodyTop + 18, 8);
-    g.lineStyle(1, 0x555555, 0.8);
-    g.strokeCircle(bodyX + bodyW - 6, bodyTop + 18, 8);
-    g.fillStyle(0x3fb950, 1);
-    g.fillCircle(bodyX + bodyW - 6, bodyTop + 18, 2);
+    fr.fillStyle(0x1a2332, 1);
+    fr.fillCircle(bodyX + bodyW - 6, bodyTop + 18, 8);
+    fr.lineStyle(1, 0x555555, 0.8);
+    fr.strokeCircle(bodyX + bodyW - 6, bodyTop + 18, 8);
+    fr.fillStyle(0x3fb950, 1);
+    fr.fillCircle(bodyX + bodyW - 6, bodyTop + 18, 2);
 
     // Bin label
     this.add.text(x + w / 2, bodyTop + 18, key, {
       fontFamily: "monospace", fontSize: "16px", color: colourStr, fontStyle: "bold",
-    }).setOrigin(0.5).setDepth(3);
+    }).setOrigin(0.5).setDepth(4);
+
+    // Capacity label
+    const capLabel = n > 0 ? "0/" + n : "overflow";
+    bin._capacityText = this.add.text(x + w / 2, bodyTop + bodyH - 10, capLabel, {
+      fontFamily: "monospace", fontSize: "9px", color: "#8b949e",
+    }).setOrigin(0.5).setDepth(4);
+  }
+
+  _fillTankSegment(bin) {
+    const { bodyTop, bodyH, bodyX, bodyW } = this._getTankMetrics(bin);
+    const n = Math.max(1, bin._expectedCount || bin._filledCount);
+    const filled = bin._filledCount;
+    const fillH = (filled / n) * bodyH;
+    const fillY = bodyTop + bodyH - fillH;
+
+    const g = bin._fillGfx;
+    g.clear();
+
+    if (filled > 0) {
+      // Liquid fill from bottom up
+      g.fillStyle(bin.colour, 0.25);
+      g.fillRect(bodyX + 3, fillY, bodyW - 6, fillH - 2);
+
+      // Liquid surface highlight
+      g.fillStyle(bin.colour, 0.15);
+      g.fillRect(bodyX + 3, fillY, bodyW - 6, 3);
+
+      // Bubble effect
+      g.fillStyle(0xffffff, 0.08);
+      for (let b = 0; b < filled; b++) {
+        const bx = bodyX + 12 + (b * 31) % (bodyW - 24);
+        const by = fillY + 8 + (b * 17) % Math.max(1, fillH - 16);
+        g.fillCircle(bx, by, 2);
+      }
+    }
+
+    // Update capacity label
+    bin._capacityText.setText(filled + "/" + n);
   }
 
   // ═══════════════════════ DROP LOGIC ═══════════════════════
@@ -266,6 +342,16 @@ export class AggregationScene extends Phaser.Scene {
     const containerType = this._getRefrigerantClass(container.refrigerant);
     if (targetBin === "MIXED" || targetBin === containerType) {
       this.binContents[targetBin].push(container);
+      const bin = this.binDefs[targetBin];
+      bin._filledCount++;
+      if (targetBin === "MIXED" && bin._expectedCount === 0) {
+        bin._expectedCount = 1;
+      }
+      if (bin._filledCount > bin._expectedCount) {
+        bin._expectedCount = bin._filledCount;
+      }
+      this._fillTankSegment(bin);
+      this._updateBinTexts(targetBin);
       if (targetBin === "MIXED") {
         this.gs.hud.showAlert("⚠️ Mixed container! 2 samples required. GWP uses the LOWER result.");
       } else {
