@@ -8,28 +8,42 @@ export class AggregationScene extends Phaser.Scene {
   create() {
     this.gs = this.registry.get("gameState");
     this.phase = "SORTING";
-    this.binContents = { HFC: [], CFC: [], HCFC: [], MIXED: [] };
     this.labQueue = [];
     this.labCurrent = null;
 
-    this.binDefs = {
-      HFC:   { x: 520, y: 70,  w: 170, h: 112, colour: 0x29B6F6, colourStr: "#29B6F6" },
-      CFC:   { x: 520, y: 192, w: 170, h: 112, colour: 0x66BB6A, colourStr: "#66BB6A" },
-      HCFC:  { x: 520, y: 314, w: 170, h: 112, colour: 0xFFA726, colourStr: "#FFA726" },
-      MIXED: { x: 520, y: 436, w: 170, h: 112, colour: 0xCE93D8, colourStr: "#CE93D8" },
-    };
+    const uniqueRefs = [...new Set(this.gs.containers.map(c => c.refrigerant))];
+    uniqueRefs.sort();
 
-    // Pre-compute expected container count per tank
-    for (const key of Object.keys(this.binDefs)) {
-      const bin = this.binDefs[key];
-      if (key === "MIXED") {
-        bin._expectedCount = 0;
-      } else {
-        bin._expectedCount = this.gs.containers
-          .filter(c => this._getRefrigerantClass(c.refrigerant) === key).length;
-      }
-      bin._filledCount = 0;
-    }
+    this.binDefs = {};
+    this.binContents = {};
+    const cols = 2, tankW = 140, tankH = 105, padX = 20, padY = 8;
+    const startX = 480, startY = 65;
+
+    uniqueRefs.forEach((refId, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const r = REFRIGERANTS.find(rf => rf.id === refId);
+      this.binDefs[refId] = {
+        x: startX + col * (tankW + padX),
+        y: startY + row * (tankH + padY),
+        w: tankW, h: tankH,
+        colour: r ? parseInt(r.colour.slice(1), 16) : 0x555555,
+        colourStr: r ? r.colour : "#555555",
+        _expectedCount: this.gs.containers.filter(c => c.refrigerant === refId).length,
+        _filledCount: 0,
+      };
+      this.binContents[refId] = [];
+    });
+
+    const mixedIdx = uniqueRefs.length;
+    this.binDefs["MIXED"] = {
+      x: startX + (mixedIdx % cols) * (tankW + padX),
+      y: startY + Math.floor(mixedIdx / cols) * (tankH + padY),
+      w: tankW, h: tankH,
+      colour: 0xCE93D8, colourStr: "#CE93D8",
+      _expectedCount: 0, _filledCount: 0,
+    };
+    this.binContents["MIXED"] = [];
 
     this.gfx = this.add.graphics();
     this.draggables = [];
@@ -53,19 +67,19 @@ export class AggregationScene extends Phaser.Scene {
     this.add.text(20, 12, "STAGE 2 — AGGREGATION & SORTING", {
       fontFamily: "monospace", fontSize: "18px", color: "#79c0ff", fontStyle: "bold",
     });
-    this.add.text(20, 38, "Drag canisters to the correct collection tank", {
+    this.add.text(20, 38, "Drag each canister to its matching refrigerant tank", {
       fontFamily: "monospace", fontSize: "13px", color: "#8b949e",
     });
 
     // Guide arrows between canister area and tanks
     const arrowG = this.add.graphics();
     arrowG.lineStyle(1, 0x30363d, 0.5);
-    for (let ay = 130; ay < 480; ay += 120) {
-      arrowG.lineBetween(250, ay, 490, ay);
+    for (let ay = 140; ay < 440; ay += 140) {
+      arrowG.lineBetween(250, ay, 460, ay);
       arrowG.fillStyle(0x30363d, 0.5);
-      arrowG.fillTriangle(490, ay - 5, 490, ay + 5, 500, ay);
+      arrowG.fillTriangle(460, ay - 5, 460, ay + 5, 470, ay);
     }
-    this.add.text(370, 290, "DRAG →", {
+    this.add.text(360, 290, "DRAG →", {
       fontFamily: "monospace", fontSize: "10px", color: "#30363d",
     }).setOrigin(0.5).setAngle(-5);
 
@@ -88,12 +102,15 @@ export class AggregationScene extends Phaser.Scene {
       this.binZones[key] = zone;
     }
 
-    // Build draggable canisters in a 2-column grid
+    // Build draggable canisters in a grid
+    const canCols = this.gs.containers.length > 6 ? 3 : 2;
+    const canSpacingX = canCols === 3 ? 75 : 90;
+    const canSpacingY = this.gs.containers.length > 8 ? 95 : 110;
     this.gs.containers.forEach((c, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const cx = 55 + col * 90;
-      const cy = 80 + row * 115;
+      const col = i % canCols;
+      const row = Math.floor(i / canCols);
+      const cx = 40 + col * canSpacingX;
+      const cy = 80 + row * canSpacingY;
       this._createDraggableCanister(c, cx, cy);
     });
 
@@ -293,8 +310,9 @@ export class AggregationScene extends Phaser.Scene {
     fr.fillCircle(bodyX + bodyW - 6, bodyTop + 18, 2);
 
     // Bin label
+    const labelSize = key.length > 6 ? "11px" : "14px";
     this.add.text(x + w / 2, bodyTop + 18, key, {
-      fontFamily: "monospace", fontSize: "16px", color: colourStr, fontStyle: "bold",
+      fontFamily: "monospace", fontSize: labelSize, color: colourStr, fontStyle: "bold",
     }).setOrigin(0.5).setDepth(4);
 
     // Capacity label
@@ -339,8 +357,7 @@ export class AggregationScene extends Phaser.Scene {
   // ═══════════════════════ DROP LOGIC ═══════════════════════
 
   _onContainerDrop(container, targetBin) {
-    const containerType = this._getRefrigerantClass(container.refrigerant);
-    if (targetBin === "MIXED" || targetBin === containerType) {
+    if (targetBin === "MIXED" || targetBin === container.refrigerant) {
       this.binContents[targetBin].push(container);
       const bin = this.binDefs[targetBin];
       bin._filledCount++;
@@ -353,13 +370,18 @@ export class AggregationScene extends Phaser.Scene {
       this._fillTankSegment(bin);
       this._updateBinTexts(targetBin);
       if (targetBin === "MIXED") {
-        this.gs.hud.showAlert("⚠️ Mixed container! 2 samples required. GWP uses the LOWER result.");
+        this.gs.hud.showAlert("⚠️ Mixed tank! GWP uses the LOWEST value — you lose credits.");
       } else {
         this.gs.hud.showSuccess("✅ " + container.refrigerant + " → " + targetBin + " tank");
       }
       return true;
+    } else if (targetBin !== "MIXED" && targetBin !== container.refrigerant
+      && this._getRefrigerantClass(container.refrigerant) === this._getRefrigerantClass(targetBin)) {
+      this.gs.hud.showAlert("❌ Same class but wrong refrigerant! " + container.refrigerant + " ≠ " + targetBin + ". Mixing loses credits.");
+      this.gs.score.projectEmissions += 50;
+      return false;
     } else {
-      this.gs.hud.showAlert("❌ Wrong tank! " + container.refrigerant + " is " + containerType + ", not " + targetBin + ".");
+      this.gs.hud.showAlert("❌ Wrong tank! " + container.refrigerant + " does not go in " + targetBin + ".");
       this.gs.score.projectEmissions += 50;
       return false;
     }
