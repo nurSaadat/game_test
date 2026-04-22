@@ -3,15 +3,15 @@
 
 export const REFRIGERANTS = [
   // HFCs (Montreal Protocol Annex F, Group I)
-  { id: "HFC-134a",  type: "HFC",  GWP: 1530,  eligible: true,  colour: "#4FC3F7" },
-  { id: "HFC-410A",  type: "HFC",  GWP: 2088,  eligible: true,  colour: "#29B6F6" },
-  { id: "HFC-404A",  type: "HFC",  GWP: 3922,  eligible: true,  colour: "#0288D1" },
-  { id: "HFC-23",    type: "HFC",  GWP: 14600, eligible: true,  colour: "#01579B" },
+  { id: "HFC-134a",  type: "HFC",  GWP: 1530,  eligible: true,  colour: "#4FC3F7", destroyTemp: { min: 850, max: 1100 } },
+  { id: "HFC-410A",  type: "HFC",  GWP: 2088,  eligible: true,  colour: "#29B6F6", destroyTemp: { min: 900, max: 1150 } },
+  { id: "HFC-404A",  type: "HFC",  GWP: 3922,  eligible: true,  colour: "#0288D1", destroyTemp: { min: 900, max: 1100 } },
+  { id: "HFC-23",    type: "HFC",  GWP: 14600, eligible: true,  colour: "#01579B", destroyTemp: { min: 1050, max: 1250 } },
   // CFCs (Annex A Group I, Annex B Group I)
-  { id: "CFC-12",    type: "CFC",  GWP: 10200, eligible: true,  colour: "#A5D6A7" },
-  { id: "CFC-11",    type: "CFC",  GWP: 4750,  eligible: true,  colour: "#66BB6A" },
+  { id: "CFC-12",    type: "CFC",  GWP: 10200, eligible: true,  colour: "#A5D6A7", destroyTemp: { min: 1000, max: 1200 } },
+  { id: "CFC-11",    type: "CFC",  GWP: 4750,  eligible: true,  colour: "#66BB6A", destroyTemp: { min: 950, max: 1200 } },
   // HCFCs (Annex C Group I)
-  { id: "HCFC-22",   type: "HCFC", GWP: 1960,  eligible: true,  colour: "#FFA726" },
+  { id: "HCFC-22",   type: "HCFC", GWP: 1960,  eligible: true,  colour: "#FFA726", destroyTemp: { min: 1000, max: 1250 } },
   // INELIGIBLE (red herring items in collection stage)
   { id: "CO2-R744",  type: "OTHER", GWP: 1,    eligible: false, colour: "#EF9A9A" },
   { id: "Ammonia",   type: "OTHER", GWP: 0,    eligible: false, colour: "#CE93D8" },

@@ -22,10 +22,14 @@ export class DestructionScene extends Phaser.Scene {
     this.currentDRE = 0;
     this.dwellTimer = 0;
     this.feedRate = 5;
+    this.damper = 50;
     this.feedActive = false;
     this.coAlarmTime = 0;
     this.physicsAccum = 0;
     this.tempHistory = [];
+    this.tempDriftOffset = 0;
+    this.tempDriftTarget = 0;
+    this.tempDriftTimer = 0;
 
     this.phase = "IDLE";
     this.diagnosticComponents = [];
@@ -35,6 +39,8 @@ export class DestructionScene extends Phaser.Scene {
     this.cursors = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.UP,
       down: Phaser.Input.Keyboard.KeyCodes.DOWN,
+      left: Phaser.Input.Keyboard.KeyCodes.LEFT,
+      right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
     });
 
     this._processNextContainer();
@@ -46,6 +52,8 @@ export class DestructionScene extends Phaser.Scene {
     if (this.feedActive) {
       if (this.cursors.up.isDown) this.feedRate = Math.min(10, this.feedRate + 0.15);
       if (this.cursors.down.isDown) this.feedRate = Math.max(1, this.feedRate - 0.15);
+      if (this.cursors.right.isDown) this.damper = Math.min(100, this.damper + 0.8);
+      if (this.cursors.left.isDown) this.damper = Math.max(0, this.damper - 0.8);
     }
 
     this.physicsAccum += delta;
@@ -126,8 +134,11 @@ export class DestructionScene extends Phaser.Scene {
 
     if (container) {
       const mass = (container.confirmedMassKg || container.eligibleMassKg || container.massKg).toFixed(2);
-      this.add.text(370, 14, container.refrigerant + "  |  " + mass + " kg  |  " + container.fieldContainerId, {
+      this.add.text(370, 8, container.refrigerant + "  |  " + mass + " kg  |  " + container.fieldContainerId, {
         fontFamily: "monospace", fontSize: "12px", color: "#8b949e",
+      });
+      this.add.text(370, 24, "Required zone: " + this.TEMP_MIN + "–" + this.TEMP_MAX + "°C", {
+        fontFamily: "monospace", fontSize: "10px", color: "#ffa726",
       });
     }
 
@@ -180,34 +191,72 @@ export class DestructionScene extends Phaser.Scene {
     const dwellFrac = Math.min(1, this.dwellTimer / this.MIN_DWELL_SEC);
     const inGreen = this.chamberTemp >= this.TEMP_MIN && this.chamberTemp <= this.TEMP_MAX;
     g.fillStyle(0x161b22, 1);
-    g.fillRect(300, 420, 340, 28);
+    g.fillRect(300, 415, 340, 24);
     g.fillStyle(inGreen ? 0x238636 : 0x444444, 1);
-    g.fillRect(300, 420, 340 * dwellFrac, 28);
+    g.fillRect(300, 415, 340 * dwellFrac, 24);
     g.lineStyle(1, 0x30363d, 1);
-    g.strokeRect(300, 420, 340, 28);
+    g.strokeRect(300, 415, 340, 24);
 
-    this.add.text(470, 434, "DWELL: " + this.dwellTimer.toFixed(1) + "s / " + this.MIN_DWELL_SEC + "s", {
-      fontFamily: "monospace", fontSize: "12px", color: "#ffffff",
+    this.add.text(470, 427, "DWELL: " + this.dwellTimer.toFixed(1) + "s / " + this.MIN_DWELL_SEC + "s", {
+      fontFamily: "monospace", fontSize: "11px", color: "#ffffff",
     }).setOrigin(0.5);
 
     // Feed rate
-    this.add.text(300, 458, "FEED RATE", {
-      fontFamily: "monospace", fontSize: "11px", color: "#8b949e",
+    this.add.text(300, 446, "FEED RATE (↑↓)", {
+      fontFamily: "monospace", fontSize: "10px", color: "#8b949e",
     });
     const intFeed = Math.round(this.feedRate);
     for (let i = 0; i < 10; i++) {
       g.fillStyle(i < intFeed ? 0xffa726 : 0x1a1a1a, 1);
-      g.fillRect(300 + i * 32, 470, 28, 18);
+      g.fillRect(300 + i * 32, 458, 28, 14);
       g.lineStyle(1, 0x333333, 1);
-      g.strokeRect(300 + i * 32, 470, 28, 18);
+      g.strokeRect(300 + i * 32, 458, 28, 14);
     }
-    this.add.text(445, 500, "↑↓ arrow keys", {
-      fontFamily: "monospace", fontSize: "10px", color: "#555555",
+
+    // Air damper
+    this.add.text(300, 478, "AIR DAMPER (←→)", {
+      fontFamily: "monospace", fontSize: "10px", color: "#8b949e",
     });
+    const damperW = 320;
+    const damperX = 300;
+    const damperY = 490;
+    g.fillStyle(0x1a1a1a, 1);
+    g.fillRect(damperX, damperY, damperW, 14);
+    g.lineStyle(1, 0x333333, 1);
+    g.strokeRect(damperX, damperY, damperW, 14);
+
+    // Sweet-spot indicator
+    const idealDamper = 25 + this.feedRate * 5;
+    const sweetMin = Math.max(0, idealDamper - 12);
+    const sweetMax = Math.min(100, idealDamper + 12);
+    const sweetPxL = damperX + (sweetMin / 100) * damperW;
+    const sweetPxR = damperX + (sweetMax / 100) * damperW;
+    g.fillStyle(0x3fb950, 0.25);
+    g.fillRect(sweetPxL, damperY, sweetPxR - sweetPxL, 14);
+
+    // Damper fill
+    const damperFillW = (this.damper / 100) * damperW;
+    const damperDev = Math.abs(this.damper - idealDamper) / 50;
+    const damperColor = damperDev < 0.25 ? 0x58a6ff : damperDev < 0.5 ? 0xffa726 : 0xf85149;
+    g.fillStyle(damperColor, 0.85);
+    g.fillRect(damperX, damperY, damperFillW, 14);
+    g.lineStyle(1, 0x333333, 1);
+    g.strokeRect(damperX, damperY, damperW, 14);
+
+    this.add.text(damperX + damperW + 8, damperY + 1, Math.round(this.damper) + "%", {
+      fontFamily: "monospace", fontSize: "11px", color: "#e6edf3",
+    });
+
+    // O₂ balance label
+    const o2Label = damperDev < 0.15 ? "O₂ BALANCED" : damperDev < 0.35 ? "O₂ SLIGHTLY OFF" : this.damper < idealDamper ? "O₂ STARVED" : "EXCESS AIR";
+    const o2Color = damperDev < 0.15 ? "#3fb950" : damperDev < 0.35 ? "#ffa726" : "#f85149";
+    this.add.text(damperX + damperW / 2, damperY + 20, o2Label, {
+      fontFamily: "monospace", fontSize: "9px", color: o2Color,
+    }).setOrigin(0.5, 0);
 
     // Temp history graph
     if (this.tempHistory.length > 1) {
-      const gx = 300, gy = 515, gw = 340, gh = 72;
+      const gx = 300, gy = 520, gw = 340, gh = 68;
       g.fillStyle(0x0d1117, 1);
       g.fillRect(gx, gy, gw, gh);
       g.lineStyle(1, 0x21262d, 1);
@@ -231,7 +280,50 @@ export class DestructionScene extends Phaser.Scene {
       this.add.text(gx + 4, gy + 4, "Temp History", {
         fontFamily: "monospace", fontSize: "9px", color: "#555555",
       });
+
+      // Refrigerant-specific zone label
+      this.add.text(gx + gw - 4, gy + 4, this.TEMP_MIN + "–" + this.TEMP_MAX + "°C zone", {
+        fontFamily: "monospace", fontSize: "9px", color: "#3fb950",
+      }).setOrigin(1, 0);
     }
+
+    // Controls legend (right panel, below CO gauge)
+    const lx = 670, ly = 430;
+    g.fillStyle(0x161b22, 0.9);
+    g.fillRect(lx, ly, 220, 160);
+    g.lineStyle(1, 0x30363d, 1);
+    g.strokeRect(lx, ly, 220, 160);
+    this.add.text(lx + 110, ly + 10, "CONTROLS", {
+      fontFamily: "monospace", fontSize: "11px", color: "#79c0ff", fontStyle: "bold",
+    }).setOrigin(0.5);
+    const controls = [
+      ["↑ / ↓", "Feed rate (fuel)"],
+      ["← / →", "Air damper (O₂)"],
+    ];
+    controls.forEach(([key, desc], i) => {
+      const row = ly + 28 + i * 18;
+      this.add.text(lx + 8, row, key, {
+        fontFamily: "monospace", fontSize: "11px", color: "#ffa726", fontStyle: "bold",
+      });
+      this.add.text(lx + 56, row, desc, {
+        fontFamily: "monospace", fontSize: "10px", color: "#8b949e",
+      });
+    });
+    const hints = [
+      "Keep temp in the green zone",
+      "Match damper to feed rate",
+      "Low O₂ → CO spikes",
+      "High O₂ → chamber cools",
+      "Zone shifts per refrigerant",
+    ];
+    this.add.text(lx + 8, ly + 72, "TIPS", {
+      fontFamily: "monospace", fontSize: "10px", color: "#58a6ff", fontStyle: "bold",
+    });
+    hints.forEach((h, i) => {
+      this.add.text(lx + 10, ly + 86 + i * 14, "· " + h, {
+        fontFamily: "monospace", fontSize: "9px", color: "#6e7681",
+      });
+    });
 
     // CO alarm tint
     if (this.coAlarmTime > 0) {
@@ -344,22 +436,63 @@ export class DestructionScene extends Phaser.Scene {
       this.chamberTemp = 900;
       this.coLevel = 20;
       this.feedRate = 5;
+      this.damper = 50;
       this.feedActive = true;
       this.tempHistory = [];
       this.physicsAccum = 0;
+      this.tempDriftOffset = 0;
+      this.tempDriftTarget = 0;
+      this.tempDriftTimer = 0;
+
+      const r = REFRIGERANTS.find(r => r.id === container.refrigerant);
+      if (r && r.destroyTemp) {
+        this.TEMP_MIN = r.destroyTemp.min;
+        this.TEMP_MAX = r.destroyTemp.max;
+      } else {
+        this.TEMP_MIN = 850;
+        this.TEMP_MAX = 1200;
+      }
+
       this.phase = "RUNNING";
     });
   }
 
   _updateChamberPhysics() {
-    const targetTemp = 700 + this.feedRate * 60;
-    this.chamberTemp += (targetTemp - this.chamberTemp) * 0.04 + (Math.random() - 0.5) * 20;
+    // Damper controls O2 supply. Optimal O2 ratio is ~1.0 (stoichiometric).
+    // damper 0–100 maps to o2Ratio 0–2. Sweet spot depends on feed rate:
+    // higher feed = more fuel = need more air to match.
+    const o2Ratio = this.damper / 50;
+    const idealDamper = 25 + this.feedRate * 5;
+    const o2Deviation = Math.abs(this.damper - idealDamper) / 50;
+
+    // Temperature: damper affects combustion efficiency.
+    // Too little air (lean O2) → smothered flame, temp drops.
+    // Too much air (rich O2) → excess air cools the chamber.
+    const damperTempPenalty = o2Deviation * 120;
+    const baseTarget = 700 + this.feedRate * 60;
+    const targetTemp = baseTarget - damperTempPenalty;
+
+    // Thermal load drift: the sweet spot shifts over time as refrigerant
+    // vaporizes and changes the chamber chemistry.
+    this.tempDriftTimer += 0.1;
+    if (this.tempDriftTimer >= 4) {
+      this.tempDriftTimer = 0;
+      this.tempDriftTarget = (Math.random() - 0.5) * 60;
+    }
+    this.tempDriftOffset += (this.tempDriftTarget - this.tempDriftOffset) * 0.06;
+
+    this.chamberTemp += (targetTemp + this.tempDriftOffset - this.chamberTemp) * 0.04
+      + (Math.random() - 0.5) * 20;
     this.chamberTemp = Math.max(700, Math.min(1300, this.chamberTemp));
 
+    // CO production depends on both temperature AND O2 balance.
+    // Bad O2 ratio means incomplete combustion even at correct temp.
     if (this.chamberTemp < this.TEMP_MIN) {
-      this.coLevel += 7;
+      this.coLevel += 7 + o2Deviation * 5;
     } else if (this.chamberTemp > this.TEMP_MAX) {
-      this.coLevel += 4;
+      this.coLevel += 4 + o2Deviation * 3;
+    } else if (o2Deviation > 0.4) {
+      this.coLevel += o2Deviation * 8;
     } else {
       this.coLevel = Math.max(8, this.coLevel - 4 + (Math.random() - 0.5) * 6);
     }
@@ -407,6 +540,7 @@ export class DestructionScene extends Phaser.Scene {
           this.time.delayedCall(900, () => {
             this.coLevel = 28;
             this.coAlarmTime = 0;
+            this.damper = 50;
             this.feedActive = true;
             this.phase = "RUNNING";
             this.gs.hud.showSuccess("✅ Component fixed! Resuming destruction.");
