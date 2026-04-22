@@ -433,6 +433,7 @@ export class DestructionScene extends Phaser.Scene {
     const refrigerant = batch[0].refrigerant;
     this.chamber = { batch, refrigerant, weighed: false, DRE: 0 };
     this.phase = "WEIGHING";
+    this._render();
 
     this._showBatchWeighingDialog(batch, (totalMass) => {
       this.chamber.confirmedTotalMass = totalMass;
@@ -565,6 +566,7 @@ export class DestructionScene extends Phaser.Scene {
     if (this.phase !== "RUNNING") return;
     this.feedActive = false;
     this.phase = "EMPTY_WEIGH";
+    this._render();
 
     const ch = this.chamber;
     const confirmedMass = ch.confirmedTotalMass;
