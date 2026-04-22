@@ -35,7 +35,7 @@ export class HUD {
         font-family:monospace; font-size:13px; z-index:200; max-width:600px;
         text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);
       ">${message}</div>`;
-    this._alertTimer = setTimeout(() => this.clearOverlay(), durationMs);
+    this._alertTimer = setTimeout(() => this._clearToast(), durationMs);
   }
 
   // Show a persistent panel (form, modal) — caller must clear manually
