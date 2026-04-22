@@ -518,6 +518,7 @@ export class DestructionScene extends Phaser.Scene {
     this.phase = "DIAGNOSTIC";
     this.coAlarmTime = 0;
     this.chamber.coAlarmCount++;
+    this.gs.flags.coAlarmPenalty = true;
 
     const components = [
       { name: "Burner Nozzle", desc: "Fuel injection point" },

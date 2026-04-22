@@ -25,6 +25,7 @@ const gameState = {
     labAccuracyPenalty: false,
     sortingPenalty: false,
     leakagePenalty: false,
+    coAlarmPenalty: false,
   },
   hud,
 };

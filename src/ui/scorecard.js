@@ -154,6 +154,16 @@ export class ScorecardScene extends Phaser.Scene {
       });
       flagY += 44;
     }
+    if (d.flags.coAlarmPenalty) {
+      g.fillStyle(0x2d1010, 1);
+      g.fillRect(18, flagY, 480, 38);
+      g.lineStyle(1, 0xf85149, 1);
+      g.strokeRect(18, flagY, 480, 38);
+      this.add.text(28, flagY + 14, "⚠ CO alarm triggered — additional emissions penalty applied", {
+        fontFamily: "monospace", fontSize: "11px", color: "#f85149",
+      });
+      flagY += 44;
+    }
     if (hasDREIssue) {
       g.fillStyle(0x2d1010, 1);
       g.fillRect(18, flagY, 480, 38);
@@ -196,7 +206,7 @@ export class ScorecardScene extends Phaser.Scene {
 
   _getGrade(credits, flags, batches) {
     const hasDREIssue = batches.some(b => b.DRE < 99.99);
-    const hasAnyPenalty = flags.provenanceGapPenalty || flags.labAccuracyPenalty || flags.sortingPenalty || flags.leakagePenalty || hasDREIssue;
+    const hasAnyPenalty = flags.provenanceGapPenalty || flags.labAccuracyPenalty || flags.sortingPenalty || flags.leakagePenalty || flags.coAlarmPenalty || hasDREIssue;
     if (credits > 500 && !hasAnyPenalty)
       return { grade: "A+", label: "🏆 Verified! Credits Issued." };
     if (credits > 200)

@@ -21,6 +21,7 @@ export class TransitionScene extends Phaser.Scene {
     if (gs.flags.labAccuracyPenalty) penalties.push("Lab Inaccuracy");
     if (gs.flags.provenanceGapPenalty) penalties.push("Provenance Gap");
     if (gs.flags.leakagePenalty) penalties.push("Leakage >10%");
+    if (gs.flags.coAlarmPenalty) penalties.push("CO Alarm");
 
     this.cameras.main.setBackgroundColor("rgba(0,0,0,0.88)");
 
