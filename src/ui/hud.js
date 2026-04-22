@@ -14,6 +14,7 @@ export class HUD {
 
   showAlert(message, durationMs = 2500) {
     clearTimeout(this._alertTimer);
+    this._overlay.classList.remove("blocking");
     this._overlay.innerHTML = `
       <div style="
         position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
@@ -26,6 +27,7 @@ export class HUD {
 
   showSuccess(message, durationMs = 2000) {
     clearTimeout(this._alertTimer);
+    this._overlay.classList.remove("blocking");
     this._overlay.innerHTML = `
       <div style="
         position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
@@ -39,11 +41,13 @@ export class HUD {
   // Show a persistent panel (form, modal) — caller must clear manually
   showPanel(htmlString) {
     clearTimeout(this._alertTimer);
+    this._overlay.classList.add("blocking");
     this._overlay.innerHTML = htmlString;
   }
 
   clearOverlay() {
     clearTimeout(this._alertTimer);
+    this._overlay.classList.remove("blocking");
     this._overlay.innerHTML = "";
   }
 }
